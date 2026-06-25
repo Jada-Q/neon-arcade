@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON TRON · 光轨对战</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 全局合成波风格 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8; --gold:#ffd95e; --green:#5effa0;
+    --p1:#5ef0ff; /* 玩家1 青 */
+    --p2:#ff5ec8; /* 玩家2 粉 */
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{width:100%; height:100%; overflow:hidden; background:#160a36;}
+  body{
+    font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+    /* 日落渐变 */
+    background:linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  /* CRT 扫描线叠加 */
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:9999;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0, rgba(0,0,0,0.16) 1px, transparent 2px, transparent 3px);
+    mix-blend-mode:multiply; opacity:.45;
+  }
+  #wrap{position:relative; width:100vw; height:100vh; display:flex; align-items:center; justify-content:center;}
+  #game{
+    display:block; image-rendering:pixelated;
+    box-shadow:0 0 0 3px var(--pink), 4px 4px 0 var(--cyan), 0 0 40px rgba(255,46,136,.5);
+    border-radius:4px; background:#0a0420;
+    touch-action:none;
+  }
+  /* ===== HUD ===== */
+  #hud{
+    position:fixed; top:10px; left:0; right:0; z-index:50;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:0 16px; pointer-events:none; font-family:'Press Start 2P',monospace;
+  }
+  .scoreBox{
+    background:rgba(10,4,32,.6); border:2px solid; padding:8px 12px;
+    font-size:12px; line-height:1.6; text-shadow:2px 2px 0 #000;
+  }
+  #s1{border-color:var(--p1); color:var(--p1); box-shadow:3px 3px 0 #07303a;}
+  #s2{border-color:var(--p2); color:var(--p2); box-shadow:3px 3px 0 #3a0730; text-align:right;}
+  .scoreBox b{font-size:20px; display:block; margin-top:4px;}
+  #centerHud{
+    text-align:center; color:var(--gold); font-size:10px; text-shadow:2px 2px 0 #000;
+    background:rgba(10,4,32,.5); border:2px solid var(--gold); padding:6px 10px; align-self:center;
+  }
+  /* ===== 静音按钮 ===== */
+  #mute{
+    position:fixed; top:10px; right:50%; transform:translateX(50%); z-index:60;
+    margin-top:46px;
+    pointer-events:auto; cursor:pointer; background:rgba(10,4,32,.7);
+    border:2px solid var(--gold); color:var(--gold); font-family:'Press Start 2P',monospace;
+    font-size:10px; padding:6px 8px; box-shadow:3px 3px 0 #5e4a07;
+  }
+  #mute:active{transform:translateX(50%) translate(2px,2px); box-shadow:1px 1px 0 #5e4a07;}
+  /* ===== 遮罩 ===== */
+  .overlay{
+    position:fixed; inset:0; z-index:200; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; padding:20px;
+    background:radial-gradient(ellipse at center, rgba(22,10,54,.82), rgba(10,4,32,.96));
+    backdrop-filter:blur(2px);
+  }
+  .overlay.hidden{display:none;}
+  .title{
+    font-family:'Press Start 2P',monospace; font-size:clamp(22px,7vw,52px); line-height:1.3;
+    color:var(--cyan); text-shadow:0 0 12px var(--cyan), 4px 4px 0 var(--pink);
+    margin-bottom:6px; letter-spacing:2px;
+  }
+  .subtitle{
+    font-family:'Press Start 2P',monospace; font-size:clamp(10px,2.4vw,16px);
+    color:var(--magenta); text-shadow:0 0 8px var(--magenta),2px 2px 0 #000; margin-bottom:24px;
+  }
+  .info{max-width:560px; font-size:clamp(13px,2.6vw,17px); line-height:1.9; margin-bottom:24px; color:#ffe;}
+  .info .k{
+    display:inline-block; background:#1a0c3a; border:1px solid var(--gold); color:var(--gold);
+    padding:1px 8px; margin:0 2px; border-radius:3px; font-weight:700; font-size:.9em;
+  }
+  .c1{color:var(--p1);} .c2{color:var(--p2);}
+  .btn{
+    font-family:'Press Start 2P',monospace; font-size:clamp(14px,3vw,20px); cursor:pointer;
+    background:var(--pink); color:#fff; border:none; padding:16px 28px;
+    box-shadow:5px 5px 0 var(--cyan); text-shadow:2px 2px 0 #7a0a3a;
+    transition:transform .06s; letter-spacing:2px;
+  }
+  .btn:active{transform:translate(3px,3px); box-shadow:2px 2px 0 var(--cyan);}
+  .winMsg{font-family:'Press Start 2P',monospace; font-size:clamp(16px,4vw,30px); margin-bottom:14px;}
+  .hi{font-size:clamp(10px,2vw,13px); color:var(--gold); margin-top:18px; font-family:'Press Start 2P',monospace;}
+  /* 触屏方向键 */
+  #touchpads{position:fixed; inset:0; z-index:40; pointer-events:none; display:none;}
+  .pad{position:absolute; bottom:14px; display:flex; gap:10px; pointer-events:auto;}
+  #padL{left:14px;} #padR{right:14px;}
+  .tbtn{
+    width:62px; height:62px; border-radius:10px; font-size:24px; color:#fff;
+    background:rgba(10,4,32,.55); border:2px solid; display:flex; align-items:center; justify-content:center;
+    user-select:none; -webkit-user-select:none; touch-action:none;
+  }
+  #padL .tbtn{border-color:var(--p1); color:var(--p1); box-shadow:0 0 12px var(--p1);}
+  #padR .tbtn{border-color:var(--p2); color:var(--p2); box-shadow:0 0 12px var(--p2);}
+  .flash{position:fixed; inset:0; z-index:150; pointer-events:none; opacity:0; background:#fff;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="scoreBox" id="s1">玩家1 · 青<b id="score1">0</b></div>
+  <div id="centerHud">回合 <span id="roundNum">1</span> · 速度 <span id="spd">1.0x</span></div>
+  <div class="scoreBox" id="s2">玩家2 · 粉<b id="score2">0</b></div>
+</div>
+<button id="mute">♪ 声音</button>
+
+<!-- 触屏键 -->
+<div id="touchpads">
+  <div class="pad" id="padL">
+    <div class="tbtn" data-act="p1L">↺</div>
+    <div class="tbtn" data-act="p1R">↻</div>
+  </div>
+  <div class="pad" id="padR">
+    <div class="tbtn" data-act="p2L">↺</div>
+    <div class="tbtn" data-act="p2R">↻</div>
+  </div>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<!-- 开始遮罩 -->
+<div class="overlay" id="startOverlay">
+  <div class="title">NEON TRON</div>
+  <div class="subtitle">光 轨 对 战</div>
+  <div class="info">
+    <span class="c1">玩家1（青）</span> 用 <span class="k">W</span><span class="k">A</span><span class="k">S</span><span class="k">D</span> 转向<br>
+    <span class="c2">玩家2（粉）</span> 用 <span class="k">↑</span><span class="k">↓</span><span class="k">←</span><span class="k">→</span> 转向<br>
+    留下光墙，撞到边界 / 任何光墙即出局<br>
+    最后存活者得分，速度逐回合加快
+  </div>
+  <button class="btn" id="startBtn">▶ 开始对战</button>
+  <div class="hi">最高分 <span id="hiStart">0</span></div>
+</div>
+
+<!-- 结束遮罩 -->
+<div class="overlay hidden" id="endOverlay">
+  <div class="winMsg" id="winMsg">平局</div>
+  <div class="info" id="endInfo"></div>
+  <button class="btn" id="restartBtn">↺ 再来一局</button>
+  <div class="hi">最高分 <span id="hiEnd">0</span></div>
+</div>
+
+<script>
+/* =========================================================================
+   NEON TRON · 本地双人光轨对战 (2D Canvas) — 合成波 OutRun 风格
+   - 玩家1(青) WASD 转向 / 玩家2(粉) 方向键转向
+   - 网格化移动并留下持续光墙；撞边界/光墙出局；最后存活者得分
+   - ?demo  : 双 AI 自动对战观赏
+   - ?record=N : 自动演示并录制主 canvas N 秒，下载 neon-tron.webm
+   ========================================================================= */
+(()=>{
+'use strict';
+
+// ---------- URL 参数 ----------
+const params = new URLSearchParams(location.search);
+const DEMO = params.has('demo') || params.has('record');
+const RECORD_SEC = params.has('record') ? Math.max(1, parseInt(params.get('record')||'15',10)) : 0;
+
+// ---------- DOM ----------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const $ = id => document.getElementById(id);
+const startOverlay=$('startOverlay'), endOverlay=$('endOverlay');
+const score1El=$('score1'), score2El=$('score2'), roundNumEl=$('roundNum'), spdEl=$('spd');
+const winMsgEl=$('winMsg'), endInfoEl=$('endInfo'), flashEl=$('flash');
+
+// ---------- 颜色 ----------
+const COL = {
+  p1:'#5ef0ff', p1d:'#1a7a8a',
+  p2:'#ff5ec8', p2d:'#8a2a6e',
+  pink:'#ff2e88', cyan:'#5ef0ff', gold:'#ffd95e', green:'#5effa0', grid:'rgba(94,240,255,0.10)', gridH:'rgba(255,94,200,0.10)'
+};
+
+// ---------- 网格 ----------
+// 场地为格子矩阵；玩家以格为单位移动；光墙占据走过的格子
+const GRID = 56;        // 横向格数（纵向按比例）
+let cols=GRID, rows=GRID;
+let cell=10;            // 每格像素，resize 时计算
+let originX=0, originY=0, fieldW=0, fieldH=0;
+
+// ---------- 游戏状态 ----------
+let players=[];
+let occupied;           // Int8Array: 0空 1=p1墙 2=p2墙
+let round=1, speedMul=1;
+let running=false, roundActive=false;
+let lastTime=0, moveAcc=0, moveInterval=0.10; // 每步秒数（随速度减小）
+const WIN_SCORE = 5;    // 任一方先到 5 分整局结束
+
+// ---------- 音频 ----------
+let audioCtx=null, masterGain=null, musicGain=null, muted=false, musicTimer=null;
+function initAudio(){
+  if(audioCtx) return;
+  try{
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    masterGain = audioCtx.createGain(); masterGain.gain.value = muted?0:0.9; masterGain.connect(audioCtx.destination);
+    musicGain = audioCtx.createGain(); musicGain.gain.value = 0.20; musicGain.connect(masterGain);
+  }catch(e){ audioCtx=null; }
+}
+function resumeAudio(){ if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }
+// 程序化音效
+function blip(freq,dur,type,vol,toFreq){
+  if(!audioCtx||muted) return;
+  const t=audioCtx.currentTime;
+  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type=type||'square'; o.frequency.setValueAtTime(freq,t);
+  if(toFreq) o.frequency.exponentialRampToValueAtTime(Math.max(40,toFreq), t+dur);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol||0.3, t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+  o.connect(g); g.connect(masterGain); o.start(t); o.stop(t+dur+0.02);
+}
+function sfxTurn(){ blip(520,0.05,'square',0.12); }
+function sfxStart(){ blip(330,0.12,'sawtooth',0.3,660); }
+function sfxCrash(){
+  if(!audioCtx||muted) return;
+  const t=audioCtx.currentTime;
+  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type='sawtooth'; o.frequency.setValueAtTime(220,t); o.frequency.exponentialRampToValueAtTime(40,t+0.5);
+  g.gain.setValueAtTime(0.5,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.5);
+  // 噪声层
+  const bs=audioCtx.sampleRate*0.4, buf=audioCtx.createBuffer(1,bs,audioCtx.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<bs;i++) d[i]=(Math.random()*2-1)*(1-i/bs);
+  const ns=audioCtx.createBufferSource(); ns.buffer=buf; const ng=audioCtx.createGain();
+  ng.gain.setValueAtTime(0.4,t); ng.gain.exponentialRampToValueAtTime(0.0001,t+0.4);
+  o.connect(g); g.connect(masterGain); ns.connect(ng); ng.connect(masterGain);
+  o.start(t); o.stop(t+0.5); ns.start(t);
+}
+function sfxWin(){ blip(523,0.1,'square',0.3); setTimeout(()=>blip(659,0.1,'square',0.3),100); setTimeout(()=>blip(784,0.18,'square',0.3),210); }
+// 合成波循环配乐：简单琶音 bass + arp
+const BASS=[55,55,82.4,73.4]; // A1 A1 E2 D2
+const ARP=[440,554.4,659.3,554.4]; // A C# E C#
+let musicStep=0;
+function musicTick(){
+  if(!audioCtx) return;
+  const t=audioCtx.currentTime;
+  const bi=Math.floor(musicStep/4)%BASS.length;
+  // bass
+  const bo=audioCtx.createOscillator(), bg=audioCtx.createGain();
+  bo.type='sawtooth'; bo.frequency.value=BASS[bi];
+  bg.gain.setValueAtTime(0.0001,t); bg.gain.exponentialRampToValueAtTime(0.3,t+0.02); bg.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+  bo.connect(bg); bg.connect(musicGain); bo.start(t); bo.stop(t+0.25);
+  // arp
+  const ao=audioCtx.createOscillator(), ag=audioCtx.createGain();
+  ao.type='square'; ao.frequency.value=ARP[musicStep%ARP.length];
+  ag.gain.setValueAtTime(0.0001,t); ag.gain.exponentialRampToValueAtTime(0.10,t+0.01); ag.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
+  ao.connect(ag); ag.connect(musicGain); ao.start(t); ao.stop(t+0.18);
+  musicStep++;
+}
+function startMusic(){ if(musicTimer) return; musicTick(); musicTimer=setInterval(musicTick,150); }
+
+// ---------- 尺寸自适应 ----------
+function resize(){
+  const maxW = Math.min(window.innerWidth-20, 900);
+  const maxH = Math.min(window.innerHeight-20, 900);
+  const size = Math.max(240, Math.min(maxW, maxH));
+  cell = Math.floor(size/GRID);
+  cols=GRID; rows=GRID;
+  fieldW = cell*cols; fieldH = cell*rows;
+  canvas.width = fieldW; canvas.height = fieldH;
+  canvas.style.width = fieldW+'px'; canvas.style.height = fieldH+'px';
+  originX=0; originY=0;
+  // 触屏检测
+  if('ontouchstart' in window || navigator.maxTouchPoints>0){ $('touchpads').style.display='block'; }
+}
+window.addEventListener('resize', resize);
+
+// ---------- 玩家对象 ----------
+function makePlayer(idx,gx,gy,dir,col,cold,isP1){
+  return {idx,gx,gy,dir,nextDir:dir,col,cold,isP1,alive:true,
+          trail:[], aiCool:0};
+}
+// 方向：0右 1下 2左 3上
+const DX=[1,0,-1,0], DY=[0,1,0,-1];
+
+function setupRound(){
+  occupied = new Int8Array(cols*rows);
+  moveAcc=0;
+  const y=Math.floor(rows/2);
+  players = [
+    makePlayer(0, Math.floor(cols*0.2), y, 0, COL.p1, COL.p1d, true),  // 玩家1 朝右
+    makePlayer(1, Math.floor(cols*0.8), y, 2, COL.p2, COL.p2d, false)  // 玩家2 朝左
+  ];
+  players.forEach(p=>{ occupied[p.gy*cols+p.gx]=p.idx+1; p.trail.push({x:p.gx,y:p.gy}); });
+  moveInterval = 0.115 / speedMul;
+  roundActive=true;
+}
+
+// ---------- 输入 ----------
+// 转向逻辑：只允许左/右转（不能直接掉头）
+function turn(p,leftRight){ // leftRight: -1 左转, +1 右转
+  p.nextDir = ((p.dir + leftRight) % 4 + 4) % 4;
+}
+// 绝对方向设置（键盘 WASD/方向键给绝对方向，转换为不掉头）
+function setDir(p,d){
+  if((p.dir+2)%4===d) return; // 禁止掉头
+  p.nextDir=d;
+}
+const keys={};
+window.addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
+  if(keys[k]) return; keys[k]=true;
+  if(!roundActive||DEMO) return;
+  const p1=players[0], p2=players[1];
+  if(k==='w') setDir(p1,3); else if(k==='s') setDir(p1,1);
+  else if(k==='a') setDir(p1,2); else if(k==='d') setDir(p1,0);
+  else if(k==='arrowup') setDir(p2,3); else if(k==='arrowdown') setDir(p2,1);
+  else if(k==='arrowleft') setDir(p2,2); else if(k==='arrowright') setDir(p2,0);
+  else return;
+  sfxTurn();
+});
+window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+
+// 触屏左右转
+document.querySelectorAll('#touchpads .tbtn').forEach(btn=>{
+  btn.addEventListener('touchstart',ev=>{
+    ev.preventDefault();
+    if(!roundActive||DEMO) return;
+    const a=btn.dataset.act;
+    if(a==='p1L') turn(players[0],-1); else if(a==='p1R') turn(players[0],1);
+    else if(a==='p2L') turn(players[1],-1); else if(a==='p2R') turn(players[1],1);
+    sfxTurn();
+  },{passive:false});
+});
+
+// ---------- AI（简单避障：预判前方将撞墙则转到空旷方向）----------
+function cellBlocked(x,y){
+  if(x<0||y<0||x>=cols||y>=rows) return true;
+  return occupied[y*cols+x]!==0;
+}
+// 从 (x,y) 沿方向 d 数前方空格距离（用于评估“空旷度”）
+function openSpace(x,y,d,maxLook){
+  let n=0;
+  for(let i=1;i<=maxLook;i++){
+    const nx=x+DX[d]*i, ny=y+DY[d]*i;
+    if(cellBlocked(nx,ny)) break;
+    n++;
+  }
+  return n;
+}
+function aiThink(p){
+  // 评估三个候选方向：直行、左转、右转（不掉头）
+  const cands=[p.dir,(p.dir+3)%4,(p.dir+1)%4];
+  let best=p.dir, bestScore=-1;
+  for(const d of cands){
+    const nx=p.gx+DX[d], ny=p.gy+DY[d];
+    if(cellBlocked(nx,ny)) continue; // 立即死的方向跳过
+    // 评分：前方空旷度 + 侧向开阔度（避免贴墙死角）+ 一点随机
+    let score = openSpace(p.gx,p.gy,d,18)*3;
+    const left=(d+3)%4, rightD=(d+1)%4;
+    score += openSpace(nx,ny,left,6) + openSpace(nx,ny,rightD,6);
+    score += Math.random()*2;
+    if(score>bestScore){ bestScore=score; best=d; }
+  }
+  p.nextDir = best;
+}
+
+// ---------- 一步推进 ----------
+function step(){
+  if(!roundActive) return;
+  // AI 决策
+  if(DEMO){ players.forEach(p=>{ if(p.alive) aiThink(p); }); }
+  // 应用转向
+  players.forEach(p=>{ if(p.alive) p.dir=p.nextDir; });
+  // 计算新位置 & 碰撞（同步判定，处理对头相撞）
+  const targets = players.map(p=> p.alive ? {x:p.gx+DX[p.dir], y:p.gy+DY[p.dir]} : null);
+  const deaths=[false,false];
+  players.forEach((p,i)=>{
+    if(!p.alive) return;
+    const t=targets[i];
+    if(cellBlocked(t.x,t.y)) deaths[i]=true;
+  });
+  // 两人撞向同一格 -> 都死
+  if(targets[0]&&targets[1]&&players[0].alive&&players[1].alive){
+    if(targets[0].x===targets[1].x && targets[0].y===targets[1].y){ deaths[0]=true; deaths[1]=true; }
+  }
+  // 落子（未死者占格）
+  players.forEach((p,i)=>{
+    if(!p.alive) return;
+    if(deaths[i]){ p.alive=false; spawnExplosion(p); return; }
+    p.gx=targets[i].x; p.gy=targets[i].y;
+    occupied[p.gy*cols+p.gx]=p.idx+1;
+    p.trail.push({x:p.gx,y:p.gy});
+  });
+  if(deaths[0]||deaths[1]){ sfxCrash(); doFlash(); }
+  // 回合结束判定
+  const aliveCount = players.filter(p=>p.alive).length;
+  if(aliveCount<=1) endRound();
+}
+
+// ---------- 爆炸粒子 ----------
+let particles=[];
+function spawnExplosion(p){
+  const cx=originX+p.gx*cell+cell/2, cy=originY+p.gy*cell+cell/2;
+  for(let i=0;i<26;i++){
+    const a=Math.random()*Math.PI*2, sp=1+Math.random()*4;
+    particles.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,col:p.col});
+  }
+}
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const q=particles[i];
+    q.x+=q.vx; q.y+=q.vy; q.vx*=0.92; q.vy*=0.92; q.life-=dt*1.6;
+    if(q.life<=0) particles.splice(i,1);
+  }
+}
+
+// ---------- 视觉反馈 ----------
+function doFlash(){ flashEl.style.transition='none'; flashEl.style.opacity='0.5'; requestAnimationFrame(()=>{ flashEl.style.transition='opacity .35s'; flashEl.style.opacity='0'; }); }
+
+// ---------- 回合 / 计分 ----------
+let scores=[0,0];
+function endRound(){
+  roundActive=false;
+  const a0=players[0].alive, a1=players[1].alive;
+  let winner=-1;
+  if(a0&&!a1){ winner=0; } else if(a1&&!a0){ winner=1; }
+  if(winner>=0){ scores[winner]++; sfxWin(); }
+  updateHud();
+  // 整局结束？
+  if(scores[0]>=WIN_SCORE || scores[1]>=WIN_SCORE){
+    setTimeout(()=>matchOver(), 1100);
+  }else{
+    // 下一回合
+    round++; speedMul = 1 + (round-1)*0.12;
+    setTimeout(()=>{
+      if(!running) return;
+      setupRound(); updateHud(); sfxStart();
+    }, 1100);
+  }
+}
+function updateHud(){
+  score1El.textContent=scores[0]; score2El.textContent=scores[1];
+  roundNumEl.textContent=round; spdEl.textContent=speedMul.toFixed(1)+'x';
+}
+
+// ---------- 最高分 ----------
+function getHi(){ return parseInt(localStorage.getItem('neonTronHi')||'0',10); }
+function setHi(v){ localStorage.setItem('neonTronHi',String(v)); }
+function refreshHi(){ const h=getHi(); $('hiStart').textContent=h; $('hiEnd').textContent=h; }
+
+// ---------- 开局 / 整局结束 ----------
+function startMatch(){
+  initAudio(); resumeAudio(); if(!DEMO||true) startMusic();
+  scores=[0,0]; round=1; speedMul=1;
+  running=true; roundActive=false;
+  startOverlay.classList.add('hidden'); endOverlay.classList.add('hidden');
+  setupRound(); updateHud(); sfxStart();
+}
+function matchOver(){
+  running=false; roundActive=false;
+  let msg, info;
+  if(scores[0]>scores[1]){ msg='玩家1 胜利!'; winMsgEl.style.color=COL.p1; }
+  else if(scores[1]>scores[0]){ msg='玩家2 胜利!'; winMsgEl.style.color=COL.p2; }
+  else { msg='平局'; winMsgEl.style.color=COL.gold; }
+  winMsgEl.textContent=msg;
+  endInfoEl.innerHTML=`比分 <span class="c1">${scores[0]}</span> : <span class="c2">${scores[1]}</span> · 共 ${round} 回合`;
+  // 最高分=单局最高得分
+  const top=Math.max(scores[0],scores[1]);
+  if(top>getHi()) setHi(top);
+  refreshHi();
+  if(DEMO){
+    // 自动演示/录制：不显示结束遮罩，自动开新一局保持连续游玩
+    endOverlay.classList.add('hidden');
+    setTimeout(()=>{
+      scores=[0,0]; round=1; speedMul=1; running=true;
+      setupRound(); updateHud();
+    }, 1200);
+    return;
+  }
+  endOverlay.classList.remove('hidden');
+}
+
+// ---------- 渲染 ----------
+function drawGrid(){
+  ctx.lineWidth=1;
+  ctx.strokeStyle=COL.grid;
+  ctx.beginPath();
+  for(let x=0;x<=cols;x+=2){ const px=originX+x*cell+0.5; ctx.moveTo(px,originY); ctx.lineTo(px,originY+fieldH); }
+  for(let y=0;y<=rows;y+=2){ const py=originY+y*cell+0.5; ctx.moveTo(originX,py); ctx.lineTo(originX+fieldW,py); }
+  ctx.stroke();
+}
+function drawWall(p){
+  // 光墙：用粗线连接 trail
+  if(p.trail.length<1) return;
+  ctx.save();
+  ctx.shadowColor=p.col; ctx.shadowBlur=10;
+  ctx.fillStyle=p.col;
+  const w=Math.max(2,cell-2);
+  for(const t of p.trail){
+    ctx.fillRect(originX+t.x*cell+(cell-w)/2, originY+t.y*cell+(cell-w)/2, w, w);
+  }
+  ctx.restore();
+}
+function drawBike(p){
+  if(!p.alive) return;
+  const x=originX+p.gx*cell, y=originY+p.gy*cell;
+  ctx.save();
+  ctx.shadowColor=p.col; ctx.shadowBlur=16;
+  ctx.fillStyle='#fff';
+  ctx.fillRect(x+1,y+1,cell-2,cell-2);
+  ctx.shadowBlur=0; ctx.fillStyle=p.col;
+  ctx.fillRect(x+cell*0.25,y+cell*0.25,cell*0.5,cell*0.5);
+  ctx.restore();
+}
+function render(){
+  // 背景：半透明拖影实现霓虹余晖
+  ctx.fillStyle='rgba(10,4,32,0.55)';
+  ctx.fillRect(0,0,fieldW,fieldH);
+  drawGrid();
+  players.forEach(drawWall);
+  players.forEach(drawBike);
+  // 粒子
+  for(const q of particles){
+    ctx.globalAlpha=Math.max(0,q.life);
+    ctx.fillStyle=q.col; ctx.shadowColor=q.col; ctx.shadowBlur=8;
+    ctx.fillRect(q.x-2,q.y-2,4,4);
+  }
+  ctx.globalAlpha=1; ctx.shadowBlur=0;
+  // 边框霓虹
+  ctx.lineWidth=3; ctx.strokeStyle=COL.pink; ctx.shadowColor=COL.pink; ctx.shadowBlur=12;
+  ctx.strokeRect(1.5,1.5,fieldW-3,fieldH-3);
+  ctx.shadowBlur=0;
+}
+
+// ---------- 主循环 ----------
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(!lastTime) lastTime=ts;
+  let dt=(ts-lastTime)/1000; lastTime=ts;
+  if(dt>0.1) dt=0.1;
+  if(running && roundActive){
+    moveAcc+=dt;
+    while(moveAcc>=moveInterval){ moveAcc-=moveInterval; step(); }
+  }
+  updateParticles(dt);
+  render();
+}
+
+// ---------- 按钮事件 ----------
+$('startBtn').addEventListener('click', startMatch);
+$('restartBtn').addEventListener('click', startMatch);
+$('mute').addEventListener('click',()=>{
+  muted=!muted; initAudio();
+  if(masterGain) masterGain.gain.value = muted?0:0.9;
+  $('mute').textContent = muted?'✕ 静音':'♪ 声音';
+});
+
+// ---------- 录制 ----------
+function startRecording(sec){
+  try{
+    const stream = canvas.captureStream(30);
+    let mt='video/webm;codecs=vp9'; if(!MediaRecorder.isTypeSupported(mt)) mt='video/webm';
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[]; mr.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{ const blob=new Blob(chunks,{type:'video/webm'}); const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download='neon-tron.webm'; document.body.appendChild(a); try{a.click()}catch(e){} };
+    mr.start(); setTimeout(()=>mr.stop(), sec*1000);
+  }catch(e){ console.warn('record fail',e); }
+}
+
+// ---------- 启动 ----------
+resize();
+refreshHi();
+requestAnimationFrame(loop);
+
+if(DEMO){
+  // ?demo / ?record：免手势直接开局（音频可挂起）
+  startOverlay.classList.add('hidden');
+  scores=[0,0]; round=1; speedMul=1; running=true;
+  setupRound(); updateHud();
+  initAudio(); // 不强制 resume，遵守自动播放策略；录制只抓画面
+  if(RECORD_SEC>0) startRecording(RECORD_SEC);
+}
+})();
+</script>
+</body>
+</html>

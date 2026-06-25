@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>霓虹隧道穿梭 · Neon Tunnel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 合成波 OutRun 配色与全局样式 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8;
+    --gold:#ffd95e; --green:#5effa0; --bg0:#1a0b2e; --bg1:#2d0b3f;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{width:100%; height:100%; overflow:hidden; background:#0a0410;}
+  body{
+    font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+    color:#fff; touch-action:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #wrap{position:fixed; inset:0;}
+  canvas{display:block; position:absolute; inset:0; width:100%; height:100%;}
+  #glcv{z-index:1;}
+  #fxcv{z-index:2; pointer-events:none;} /* 障碍/光点的额外标记层 */
+
+  /* 轻 CRT 扫描线 */
+  #scan{
+    position:absolute; inset:0; z-index:5; pointer-events:none;
+    background:repeating-linear-gradient(0deg,
+      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0.10) 3px, rgba(0,0,0,0) 4px);
+    mix-blend-mode:multiply; opacity:.5;
+  }
+
+  /* ===== HUD ===== */
+  #hud{
+    position:absolute; top:0; left:0; right:0; z-index:6; pointer-events:none;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:14px 16px; font-family:'Press Start 2P',monospace;
+    font-size:12px; line-height:1.6; text-shadow:0 0 8px var(--cyan);
+  }
+  #hud .l{color:var(--cyan);}
+  #hud .r{color:var(--gold); text-align:right; text-shadow:0 0 8px var(--gold);}
+  #hud .score{color:var(--green); text-shadow:0 0 10px var(--green);}
+  #hud .spd{color:var(--pink); text-shadow:0 0 8px var(--pink); font-size:10px;}
+
+  /* 静音按钮 */
+  #mute{
+    position:absolute; right:14px; bottom:14px; z-index:7;
+    width:46px; height:46px; border-radius:10px; cursor:pointer;
+    background:rgba(45,11,63,.7); border:2px solid var(--magenta);
+    color:var(--magenta); font-size:20px; line-height:42px; text-align:center;
+    box-shadow:0 0 12px rgba(255,94,200,.6); pointer-events:auto;
+  }
+  #mute:active{transform:scale(.93);}
+
+  /* ===== 遮罩(开始/结束) ===== */
+  .mask{
+    position:absolute; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    background:radial-gradient(ellipse at 50% 38%, rgba(45,11,63,.78), rgba(10,4,16,.94));
+    backdrop-filter:blur(2px);
+  }
+  .mask.hide{display:none;}
+  .title{
+    font-family:'Press Start 2P',monospace; font-size:26px; line-height:1.5;
+    color:var(--pink); text-shadow:0 0 14px var(--pink),0 0 30px var(--magenta);
+    margin-bottom:10px;
+  }
+  .title .c2{color:var(--cyan); text-shadow:0 0 14px var(--cyan);}
+  .sub{
+    font-size:15px; color:var(--gold); letter-spacing:1px; margin-bottom:22px;
+    text-shadow:0 0 8px var(--gold); max-width:560px;
+  }
+  .sub b{color:var(--green);}
+  .btn{
+    font-family:'Press Start 2P',monospace; font-size:14px; cursor:pointer;
+    color:#fff; background:linear-gradient(180deg,var(--pink),#c01266);
+    border:2px solid var(--cyan); border-radius:12px;
+    padding:16px 28px; pointer-events:auto;
+    box-shadow:0 0 16px var(--pink),inset 0 0 12px rgba(94,240,255,.4);
+  }
+  .btn:active{transform:scale(.95);}
+  .big{
+    font-family:'Press Start 2P',monospace; font-size:34px; color:var(--cyan);
+    text-shadow:0 0 16px var(--cyan),0 0 36px var(--pink); margin-bottom:14px;
+  }
+  #goScore{font-size:16px; color:var(--green); text-shadow:0 0 10px var(--green); margin-bottom:6px;}
+  #goBest{font-size:13px; color:var(--gold); text-shadow:0 0 8px var(--gold); margin-bottom:22px;}
+  .hint{margin-top:18px; font-size:12px; color:#c9a7e8; line-height:1.7;}
+  .demoTag{
+    position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:8;
+    font-family:'Press Start 2P',monospace; font-size:11px; color:var(--green);
+    text-shadow:0 0 10px var(--green); display:none;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="glcv"></canvas>
+  <canvas id="fxcv"></canvas>
+  <div id="scan"></div>
+
+  <div id="hud">
+    <div class="l">SCORE<br><span class="score" id="hScore">0</span></div>
+    <div class="r">BEST<br><span id="hBest">0</span><br><span class="spd" id="hSpd">SPD x1.0</span></div>
+  </div>
+
+  <div class="demoTag" id="demoTag">● DEMO 自动演示</div>
+  <div id="mute" title="静音">♪</div>
+
+  <!-- 开始遮罩 -->
+  <div class="mask" id="startMask">
+    <div class="title">霓虹<span class="c2">隧道</span>穿梭</div>
+    <div class="sub">驾驶准星穿越无尽霓虹隧道，<b>躲避障碍环</b>，<b>吃掉光点</b>。<br>速度会越来越快——你能飞多远？</div>
+    <button class="btn" id="startBtn">▶ 开始飞行</button>
+    <div class="hint">← → ↑ ↓ / WASD / 鼠标 / 触屏拖动 移动准星<br>避开红圈障碍 · 收集金色光点得分</div>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div class="mask hide" id="overMask">
+    <div class="big">GAME OVER</div>
+    <div id="goScore">本次得分 0</div>
+    <div id="goBest">最高分 0</div>
+    <button class="btn" id="againBtn">↻ 再来一次</button>
+    <div class="hint">撞上障碍环了！</div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   霓虹隧道穿梭 · Neon Tunnel Runner
+   - 全屏 WebGL：全屏四边 + 片元着色器 raymarching/极坐标 渲染隧道
+   - 玩家准星在横截面移动，躲避障碍环 / 收集光点
+   - 合成波音效与配乐(Web Audio 程序化)
+   - ?demo 自动演示，?record=N 录制 webm
+   ============================================================ */
+(function(){
+'use strict';
+
+// ---------- URL 参数 ----------
+const Q = new URLSearchParams(location.search);
+const DEMO = Q.has('demo') || Q.has('record');
+const REC_SEC = Q.has('record') ? Math.max(1, parseInt(Q.get('record')||'15',10)) : 0;
+
+// ---------- DOM ----------
+const glcv = document.getElementById('glcv');
+const fxcv = document.getElementById('fxcv');
+const fx = fxcv.getContext('2d');
+const hScore = document.getElementById('hScore');
+const hBest  = document.getElementById('hBest');
+const hSpd   = document.getElementById('hSpd');
+const startMask = document.getElementById('startMask');
+const overMask  = document.getElementById('overMask');
+const startBtn  = document.getElementById('startBtn');
+const againBtn  = document.getElementById('againBtn');
+const goScore   = document.getElementById('goScore');
+const goBest    = document.getElementById('goBest');
+const muteBtn   = document.getElementById('mute');
+const demoTag   = document.getElementById('demoTag');
+
+// ============================================================
+//  WebGL 初始化
+// ============================================================
+const gl = glcv.getContext('webgl', {antialias:false, alpha:false, preserveDrawingBuffer:false})
+        || glcv.getContext('experimental-webgl');
+let glOK = !!gl;
+
+const VERT = `
+attribute vec2 aPos;
+void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }
+`;
+
+// 片元着色器：极坐标隧道 + 霓虹辉光 + 障碍环 + 光点 + 准星
+const FRAG = `
+precision highp float;
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uSpeed;     // 前进速度(累计 z 偏移)
+uniform vec2  uPlayer;    // 准星归一化位置 [-1,1]
+uniform vec3  uObsZ;      // 三个障碍环的 z 深度(0..1, 1=最近)
+uniform vec3  uObsGap;    // 三个障碍环的开口角度
+uniform float uObsHalf;   // 开口半宽(弧度)
+uniform vec4  uGem;       // 光点: xy=角向/半径偏移, z=深度0..1, w=有效
+uniform float uHurt;      // 受击闪烁 0..1
+uniform float uFlash;     // 吃光点闪烁 0..1
+
+#define PI 3.14159265
+
+// hash / noise
+float hash(float n){ return fract(sin(n)*43758.5453); }
+float noise(vec2 p){
+  vec2 i=floor(p), f=fract(p);
+  f=f*f*(3.0-2.0*f);
+  float a=hash(i.x+i.y*57.0);
+  float b=hash(i.x+1.0+i.y*57.0);
+  float c=hash(i.x+(i.y+1.0)*57.0);
+  float d=hash(i.x+1.0+(i.y+1.0)*57.0);
+  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y; // 纵横比修正
+
+  // 准星造成隧道中心轻微偏移(视差感)
+  vec2 center = uPlayer * 0.18;
+  vec2 p = uv - center;
+
+  float r = length(p);
+  float a = atan(p.y, p.x);                 // 角度 [-PI,PI]
+  float ang = (a + PI) / (2.0*PI);          // 0..1
+
+  // 隧道深度坐标：越靠中心越远
+  float depth = 0.30 / (r + 0.06) + uSpeed; // r->0 时 depth->大
+
+  // 隧道壁纹理(向前流动)
+  float bands = sin(depth*6.0)*0.5+0.5;
+  float swirl = sin(ang*12.0 + depth*2.0 + uTime*0.4);
+  float n = noise(vec2(ang*16.0, depth*1.5));
+
+  // 霓虹色环：随深度循环切换粉/青/品红
+  float hueSel = fract(depth*0.12 + uTime*0.02);
+  vec3 cA = vec3(1.0,0.18,0.53);   // pink
+  vec3 cB = vec3(0.37,0.94,1.0);   // cyan
+  vec3 cC = vec3(1.0,0.37,0.78);   // magenta
+  vec3 neon = mix(cA,cB, smoothstep(0.0,0.5,hueSel));
+  neon = mix(neon,cC, smoothstep(0.5,1.0,hueSel));
+
+  // 壁面发光：靠近边缘(r 大)更亮，加上条纹
+  float wall = smoothstep(0.0,0.9,r);
+  float glow = pow(wall,1.4) * (0.5 + 0.5*bands) * (0.7+0.3*swirl);
+  vec3 col = neon * glow * 1.4;
+
+  // 网格线(合成波)
+  float gx = abs(sin(ang*36.0))*0.5+0.5;
+  float grid = smoothstep(0.86,1.0,gx) * wall * 0.6;
+  col += vec3(0.37,0.94,1.0) * grid * (0.4+0.3*bands);
+
+  // 中心远处暗化 + 紫色雾
+  col = mix(vec3(0.10,0.03,0.18), col, smoothstep(0.0,0.55,r));
+  col += vec3(0.35,0.10,0.45) * (1.0-wall) * 0.25;
+
+  // 噪声起伏微光
+  col += neon * n * 0.12 * wall;
+
+  // ---- 障碍环：在某个 r 处出现的发光环，带缺口 ----
+  vec3 obsZ = uObsZ;
+  vec3 obsGap = uObsGap;
+  for(int i=0;i<3;i++){
+    float oz = (i==0)?obsZ.x:((i==1)?obsZ.y:obsZ.z);
+    if(oz<=0.0) continue;
+    float gap = (i==0)?obsGap.x:((i==1)?obsGap.y:obsGap.z);
+    // 障碍环所在半径：随 oz(深度) 从中心(小r)逼近到外圈(大r)
+    float orad = mix(0.07, 0.95, oz);
+    float ringW = mix(0.006,0.05,oz);
+    float ringD = abs(r - orad);
+    // 缺口：角度接近 gap 的扇区不显示环(可穿过)
+    float dA = abs(mod(a - gap + PI, 2.0*PI) - PI);
+    float openMask = smoothstep(uObsHalf*0.6, uObsHalf, dA); // 1=实体, 0=缺口
+    float ring = smoothstep(ringW, 0.0, ringD) * openMask;
+    // 障碍用红/粉警示色，越近越亮
+    vec3 obsCol = mix(vec3(1.0,0.18,0.30), vec3(1.0,0.5,0.1), oz);
+    col += obsCol * ring * (0.6 + 1.4*oz);
+    // 缺口处画一个柔和的青色"门"提示
+    float doorGlow = (1.0-openMask) * smoothstep(ringW*3.0,0.0,ringD);
+    col += vec3(0.37,0.94,1.0) * doorGlow * 0.5 * oz;
+  }
+
+  // ---- 光点(金色)：在隧道里悬浮的发光球 ----
+  if(uGem.w > 0.5){
+    float gz = uGem.z;
+    float grad = mix(0.07,0.9,gz);
+    float gang = uGem.x; // 角度
+    vec2 gpos = vec2(cos(gang),sin(gang))*grad + center;
+    float gd = length(uv - gpos);
+    float gsz = mix(0.012,0.06,gz);
+    float gem = smoothstep(gsz, 0.0, gd);
+    vec3 gcol = vec3(1.0,0.85,0.37);
+    col += gcol * gem * (1.5+2.0*gz);
+    col += gcol * smoothstep(gsz*3.0,0.0,gd) * 0.4 * gz; // halo
+  }
+
+  // ---- 玩家准星(屏幕中近处固定屏幕位置) ----
+  vec2 pp = uv - uPlayer*0.85;
+  float pd = length(pp);
+  float ring1 = smoothstep(0.045,0.038,pd) - smoothstep(0.038,0.030,pd);
+  float dot   = smoothstep(0.012,0.0,pd);
+  // 十字线
+  float cross = (smoothstep(0.004,0.0,abs(pp.x)) + smoothstep(0.004,0.0,abs(pp.y)))
+                * smoothstep(0.06,0.02,pd);
+  vec3 pcol = mix(vec3(0.37,1.0,0.63), vec3(0.37,0.94,1.0), 0.5+0.5*sin(uTime*4.0));
+  col += pcol * (ring1*1.2 + dot*1.6 + cross*0.8);
+
+  // ---- 受击/吃光反馈 ----
+  col += vec3(1.0,0.1,0.2) * uHurt * 0.6;
+  col += vec3(1.0,0.85,0.4) * uFlash * 0.5;
+
+  // 暗角
+  float vig = smoothstep(1.3,0.2,length(uv));
+  col *= mix(0.55,1.0,vig);
+
+  // 轻微色调映射
+  col = col/(col+vec3(1.0));
+  col = pow(col, vec3(0.85));
+
+  gl_FragColor = vec4(col,1.0);
+}
+`;
+
+let prog, locs={}, quadBuf;
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error('shader err:', gl.getShaderInfoLog(s));
+    return null;
+  }
+  return s;
+}
+function initGL(){
+  if(!glOK) return false;
+  const vs = compile(gl.VERTEX_SHADER, VERT);
+  const fsh = compile(gl.FRAGMENT_SHADER, FRAG);
+  if(!vs || !fsh){ glOK=false; return false; }
+  prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fsh);
+  gl.linkProgram(prog);
+  if(!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    console.error('link err:', gl.getProgramInfoLog(prog));
+    glOK=false; return false;
+  }
+  gl.useProgram(prog);
+  quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1,-1, 1,-1, -1,1,  -1,1, 1,-1, 1,1
+  ]), gl.STATIC_DRAW);
+  const ap = gl.getAttribLocation(prog,'aPos');
+  gl.enableVertexAttribArray(ap);
+  gl.vertexAttribPointer(ap,2,gl.FLOAT,false,0,0);
+  ['uRes','uTime','uSpeed','uPlayer','uObsZ','uObsGap','uObsHalf','uGem','uHurt','uFlash']
+    .forEach(n=>locs[n]=gl.getUniformLocation(prog,n));
+  return true;
+}
+
+// ============================================================
+//  尺寸 / resize（仅在真正变化时重设，录制期间不清画布）
+// ============================================================
+let W=0, H=0, DPR=1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  const cw = Math.floor(window.innerWidth  * DPR);
+  const ch = Math.floor(window.innerHeight * DPR);
+  if(cw===W && ch===H) return;        // 尺寸没变 → 不动
+  W=cw; H=ch;
+  glcv.width=W; glcv.height=H;
+  fxcv.width=W; fxcv.height=H;
+  if(glOK) gl.viewport(0,0,W,H);
+}
+window.addEventListener('resize', resize);
+
+// ============================================================
+//  Web Audio：程序化音效 + 合成波循环配乐
+// ============================================================
+let AC=null, masterGain=null, musicGain=null, muted=false, musicTimer=null;
+function initAudio(){
+  if(AC) return;
+  try{
+    AC = new (window.AudioContext||window.webkitAudioContext)();
+    masterGain = AC.createGain(); masterGain.gain.value = 0.9;
+    masterGain.connect(AC.destination);
+    musicGain = AC.createGain(); musicGain.gain.value = 0.25;
+    musicGain.connect(masterGain);
+  }catch(e){ console.warn('audio init fail',e); }
+}
+function resumeAudio(){ if(AC && AC.state==='suspended') AC.resume(); }
+
+function beep(freq, dur, type, vol, slideTo){
+  if(!AC || muted) return;
+  try{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type||'square'; o.frequency.value=freq;
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo), AC.currentTime+dur);
+    g.gain.setValueAtTime(0.0001, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(vol||0.2, AC.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime+dur);
+    o.connect(g); g.connect(masterGain);
+    o.start(); o.stop(AC.currentTime+dur+0.02);
+  }catch(e){}
+}
+function sfxGem(){ beep(880,0.10,'square',0.22,1320); setTimeout(()=>beep(1320,0.08,'square',0.18),60); }
+function sfxHit(){ beep(160,0.4,'sawtooth',0.32,40); }
+function sfxStart(){ beep(440,0.1,'square',0.2,660); setTimeout(()=>beep(660,0.12,'square',0.2,880),100); }
+
+// 合成波配乐：低音琶音 + 和弦 pad，简单 16 步循环
+const BASS = [55,55,73.42,55, 49,49,65.41,49, 41.2,41.2,55,41.2, 49,49,65.41,82.41];
+let musStep=0;
+function musicTick(){
+  if(!AC) return;
+  const t=AC.currentTime;
+  const stepDur = 0.16 / Math.max(0.6, spdMul*0.5+0.5); // 速度越快节奏越紧
+  if(!muted){
+    // bass
+    const bf=BASS[musStep%BASS.length];
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type='sawtooth'; o.frequency.value=bf;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.18,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+stepDur*0.9);
+    o.connect(g); g.connect(musicGain); o.start(t); o.stop(t+stepDur);
+    // 每4步一个高音 pad
+    if(musStep%4===0){
+      const ch=[bf*4, bf*5, bf*6];
+      ch.forEach(f=>{
+        const o2=AC.createOscillator(), g2=AC.createGain();
+        o2.type='triangle'; o2.frequency.value=f;
+        g2.gain.setValueAtTime(0.0001,t); g2.gain.exponentialRampToValueAtTime(0.05,t+0.05);
+        g2.gain.exponentialRampToValueAtTime(0.0001,t+stepDur*3.5);
+        o2.connect(g2); g2.connect(musicGain); o2.start(t); o2.stop(t+stepDur*4);
+      });
+    }
+  }
+  musStep++;
+  musicTimer = setTimeout(musicTick, stepDur*1000);
+}
+function startMusic(){ if(!musicTimer && AC) musicTick(); }
+function stopMusic(){ if(musicTimer){ clearTimeout(musicTimer); musicTimer=null; } }
+
+muteBtn.addEventListener('click', ()=>{
+  muted=!muted;
+  muteBtn.textContent = muted?'✕':'♪';
+  muteBtn.style.color = muted?'#888':'var(--magenta)';
+  if(masterGain) masterGain.gain.value = muted?0:0.9;
+});
+
+// ============================================================
+//  游戏状态
+// ============================================================
+const ST = {START:0, PLAY:1, OVER:2};
+let state = ST.START;
+
+let score=0, best=0;
+try{ best = parseInt(localStorage.getItem('neonTunnelBest')||'0',10)||0; }catch(e){}
+hBest.textContent = best;
+
+let time=0;             // 全局时间(秒)
+let speed=0;            // 累计前进偏移(进着色器)
+let spdMul=1;           // 速度倍率(随时间加快)
+let player={x:0,y:0};   // 准星归一化 [-1,1]
+let target={x:0,y:0};   // 鼠标/触摸目标
+let hurt=0, flash=0;    // 反馈
+let runTime=0;          // 本局时间
+let scoreAccum=0;       // 距离得分累计
+
+// 障碍环数组：每个 {z(0..1 越大越近), gap(角度), passed, scored}
+let obstacles=[];
+let obsSpawnT=0;
+// 光点
+let gem=null; // {ang, z, active}
+let gemSpawnT=0;
+
+const OBS_HALF = 0.55; // 缺口半宽(弧度)，玩家须从缺口穿过
+
+function resetGame(){
+  score=0; speed=0; spdMul=1; time=time||0;
+  player.x=0; player.y=0; target.x=0; target.y=0;
+  hurt=0; flash=0; runTime=0; scoreAccum=0;
+  obstacles=[]; obsSpawnT=0.6;
+  gem=null; gemSpawnT=1.2;
+  updateHUD();
+}
+
+function updateHUD(){
+  hScore.textContent = score|0;
+  hBest.textContent = best|0;
+  hSpd.textContent = 'SPD x'+spdMul.toFixed(1);
+}
+
+// ---------- 生成障碍 / 光点 ----------
+function spawnObstacle(){
+  // 缺口角度：DEMO 偶尔故意，正常随机
+  const gap = (Math.random()*2-1)*Math.PI;
+  obstacles.push({ z:0, gap:gap, scored:false });
+}
+function spawnGem(){
+  gem = { ang:(Math.random()*2-1)*Math.PI, z:0, active:true };
+}
+
+// 玩家在横截面的"角度/半径"（用于碰撞）
+function playerPolar(){
+  const px=player.x*0.85, py=player.y*0.85; // 与着色器准星位置一致
+  return { r:Math.hypot(px,py), a:Math.atan2(py,px) };
+}
+
+// ============================================================
+//  输入
+// ============================================================
+const keys={};
+window.addEventListener('keydown', e=>{
+  keys[e.key.toLowerCase()] = true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
+  if(state===ST.START && (e.key===' '||e.key==='Enter')) beginGame();
+  else if(state===ST.OVER && (e.key===' '||e.key==='Enter')) beginGame();
+}, {passive:false});
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+
+// 鼠标
+let usingPointer=false;
+window.addEventListener('mousemove', e=>{
+  if(state!==ST.PLAY || DEMO) return;
+  usingPointer=true;
+  target.x = (e.clientX/window.innerWidth)*2-1;
+  target.y = -((e.clientY/window.innerHeight)*2-1);
+});
+// 触摸
+function touchMove(e){
+  if(state!==ST.PLAY || DEMO) return;
+  if(e.touches && e.touches[0]){
+    usingPointer=true;
+    target.x = (e.touches[0].clientX/window.innerWidth)*2-1;
+    target.y = -((e.touches[0].clientY/window.innerHeight)*2-1);
+  }
+  e.preventDefault();
+}
+window.addEventListener('touchstart', touchMove, {passive:false});
+window.addEventListener('touchmove', touchMove, {passive:false});
+
+startBtn.addEventListener('click', beginGame);
+againBtn.addEventListener('click', beginGame);
+
+function beginGame(){
+  initAudio(); resumeAudio();
+  if(!muted && masterGain) masterGain.gain.value=0.9;
+  startMusic();
+  sfxStart();
+  resetGame();
+  state = ST.PLAY;
+  startMask.classList.add('hide');
+  overMask.classList.add('hide');
+  demoTag.style.display = DEMO ? 'block' : 'none';
+}
+
+function gameOver(){
+  state = ST.OVER;
+  sfxHit();
+  if(score>best){ best=score; try{ localStorage.setItem('neonTunnelBest', String(best)); }catch(e){} }
+  goScore.textContent = '本次得分 '+(score|0);
+  goBest.textContent  = '最高分 '+(best|0);
+  overMask.classList.remove('hide');
+  updateHUD();
+  if(DEMO){ // 自动重开，保证录制内容连续
+    setTimeout(()=>{ if(state===ST.OVER) beginGame(); }, 1400);
+  }
+}
+
+// ============================================================
+//  DEMO AI：朝最近障碍的缺口 / 空旷方向移动，顺路吃光点
+// ============================================================
+function demoAI(dt){
+  // 找最逼近且尚未通过的障碍
+  let nearest=null;
+  for(const o of obstacles){
+    if(o.z>0.30 && o.z<0.95){
+      if(!nearest || o.z>nearest.z) nearest=o;
+    }
+  }
+  let desiredAng=null, desiredR=0.45;
+  if(nearest){
+    // 朝缺口角度移动，半径取障碍环当前半径附近以便穿过缺口
+    desiredAng = nearest.gap;
+    desiredR = 0.55; // 缺口在外圈附近，靠拢边缘穿过
+  }
+  // 若有光点且较近且没有紧迫障碍，则去吃
+  if(gem && gem.active && gem.z>0.25 && gem.z<0.9 && (!nearest || nearest.z<0.6)){
+    desiredAng = gem.ang;
+    desiredR = mix(0.07,0.9, gem.z);
+    desiredR = Math.min(0.7, desiredR);
+  }
+  if(desiredAng===null){
+    // 没有目标：缓缓回中心附近做点漂移，显得灵动
+    desiredAng = Math.sin(time*0.7)*Math.PI;
+    desiredR = 0.25 + 0.15*Math.sin(time*1.3);
+  }
+  const tx = Math.cos(desiredAng)*desiredR / 0.85;
+  const ty = Math.sin(desiredAng)*desiredR / 0.85;
+  target.x = clamp(tx,-1,1);
+  target.y = clamp(ty,-1,1);
+}
+function mix(a,b,t){ return a+(b-a)*t; }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+
+// ============================================================
+//  更新
+// ============================================================
+function update(dt){
+  time += dt;
+  if(state!==ST.PLAY) return;
+
+  runTime += dt;
+  // 速度随时间加快
+  spdMul = 1 + runTime*0.045;
+  const fwd = (1.6 + runTime*0.07) * spdMul; // 前进速率
+  speed += fwd * dt;
+
+  // 距离得分
+  scoreAccum += fwd * dt * 1.2;
+  if(scoreAccum>=1){ score += scoreAccum|0; scoreAccum -= (scoreAccum|0); updateHUD(); }
+
+  // ---- 输入处理 ----
+  if(DEMO){ demoAI(dt); }
+  else if(!usingPointer){
+    const kspd = 2.4*dt;
+    if(keys['arrowleft']||keys['a']) target.x -= kspd;
+    if(keys['arrowright']||keys['d']) target.x += kspd;
+    if(keys['arrowup']||keys['w']) target.y += kspd;
+    if(keys['arrowdown']||keys['s']) target.y -= kspd;
+    target.x=clamp(target.x,-1,1); target.y=clamp(target.y,-1,1);
+  }
+  // 准星平滑跟随
+  player.x += (target.x-player.x)*Math.min(1,dt*10);
+  player.y += (target.y-player.y)*Math.min(1,dt*10);
+  player.x=clamp(player.x,-1,1); player.y=clamp(player.y,-1,1);
+
+  // ---- 障碍推进 ----
+  obsSpawnT -= dt;
+  const spawnGapBase = Math.max(0.7, 1.5/spdMul);
+  if(obsSpawnT<=0){ spawnObstacle(); obsSpawnT = spawnGapBase + Math.random()*0.5; }
+
+  const pol = playerPolar();
+  const OBS_PLANE = 0.88; // 碰撞判定平面深度
+  for(const o of obstacles){
+    const prevZ = o.z;
+    o.z += dt * (0.32 + runTime*0.012) * spdMul; // 逼近速度
+    // 碰撞判定：当障碍环本帧"跨过"判定平面时检测一次(高速也不会漏判)
+    if(!o.scored && prevZ < OBS_PLANE && o.z >= OBS_PLANE){
+      // 玩家是否在缺口里？ 比较角度差
+      let dA = Math.abs(((pol.a - o.gap + Math.PI)%(2*Math.PI)) - Math.PI);
+      // 玩家半径要足够大(靠近环)才算进入碰撞面;若玩家在很中心也安全(环在外圈)
+      const ringR = mix(0.07,0.95,OBS_PLANE);
+      const nearRing = Math.abs(pol.r - ringR) < 0.22;
+      const inGap = dA < OBS_HALF*0.92;
+      o.scored=true;
+      if(nearRing && !inGap){
+        // 撞环
+        hurt=1; gameOver();
+        return;
+      }else{
+        // 安全通过
+        score+=5; updateHUD();
+        beep(660,0.06,'square',0.12,990);
+      }
+    }
+  }
+  obstacles = obstacles.filter(o=>o.z<1.15);
+
+  // ---- 光点 ----
+  gemSpawnT -= dt;
+  if(!gem && gemSpawnT<=0){ spawnGem(); gemSpawnT=999; }
+  if(gem && gem.active){
+    const prevGz = gem.z;
+    gem.z += dt*(0.34+runTime*0.012)*spdMul;
+    // 收集判定：在 [0.5,0.98] 区间内或本帧跨过该区间时检测一次(高速不漏判)
+    const GEM_PLANE = 0.88;
+    if((gem.z>0.5 && gem.z<0.98) || (prevGz < GEM_PLANE && gem.z >= GEM_PLANE)){
+      const gz = clamp(gem.z, 0.5, 0.9);
+      const gr = mix(0.07,0.9,gz);
+      let dA = Math.abs(((pol.a - gem.ang + Math.PI)%(2*Math.PI)) - Math.PI);
+      if(Math.abs(pol.r-gr)<0.22 && dA<0.5){
+        gem.active=false; gem=null;
+        score+=15; flash=1; updateHUD();
+        sfxGem();
+        gemSpawnT = 1.0 + Math.random()*1.5;
+      }
+    }
+    if(gem && gem.z>=1.02){ gem=null; gemSpawnT=0.8+Math.random()*1.2; }
+  }
+
+  // 反馈衰减
+  hurt = Math.max(0, hurt - dt*2.5);
+  flash = Math.max(0, flash - dt*3.0);
+}
+
+// ============================================================
+//  渲染
+// ============================================================
+function drawGL(){
+  if(!glOK) return;
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.uniform2f(locs.uRes, W, H);
+  gl.uniform1f(locs.uTime, time);
+  gl.uniform1f(locs.uSpeed, speed);
+  gl.uniform2f(locs.uPlayer, player.x, player.y);
+
+  // 收集最多3个最近障碍传入着色器
+  const sorted = obstacles.filter(o=>!o.scored||o.z<1.0).sort((a,b)=>b.z-a.z).slice(0,3);
+  const oz=[0,0,0], og=[0,0,0];
+  for(let i=0;i<sorted.length;i++){ oz[i]=clamp(sorted[i].z,0,1); og[i]=sorted[i].gap; }
+  gl.uniform3f(locs.uObsZ, oz[0],oz[1],oz[2]);
+  gl.uniform3f(locs.uObsGap, og[0],og[1],og[2]);
+  gl.uniform1f(locs.uObsHalf, OBS_HALF);
+
+  if(gem && gem.active){
+    gl.uniform4f(locs.uGem, gem.ang, 0, clamp(gem.z,0,1), 1);
+  }else{
+    gl.uniform4f(locs.uGem, 0,0,0,0);
+  }
+  gl.uniform1f(locs.uHurt, hurt);
+  gl.uniform1f(locs.uFlash, flash);
+
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+// fx 层：障碍距离条 / 准星标记(DOM+canvas 标记 的补充)
+function drawFX(){
+  fx.clearRect(0,0,W,H);
+  if(state!==ST.PLAY) return;
+  // 顶部:最近障碍逼近条
+  let nearest=null;
+  for(const o of obstacles){ if(!o.scored && (!nearest||o.z>nearest.z)) nearest=o; }
+  if(nearest){
+    const w=W*0.4, x=(W-w)/2, y=H-22*DPR, h=8*DPR;
+    fx.fillStyle='rgba(255,46,136,0.18)';
+    fx.fillRect(x,y,w,h);
+    const t=clamp(nearest.z,0,1);
+    fx.fillStyle = t>0.7 ? 'rgba(255,40,60,0.9)' : 'rgba(94,240,255,0.8)';
+    fx.fillRect(x, y, w*t, h);
+    fx.strokeStyle='rgba(94,240,255,0.5)'; fx.lineWidth=DPR;
+    fx.strokeRect(x,y,w,h);
+  }
+}
+
+// ============================================================
+//  主循环
+// ============================================================
+let last=performance.now();
+function loop(now){
+  let dt=(now-last)/1000; last=now;
+  if(dt>0.05) dt=0.05; // 防卡顿大跳
+  resize();
+  try{ update(dt); }catch(e){ console.error('update err',e); }
+  try{ drawGL(); drawFX(); }catch(e){ console.error('draw err',e); }
+  requestAnimationFrame(loop);
+}
+
+// ============================================================
+//  启动
+// ============================================================
+function boot(){
+  resize();
+  if(!initGL()){
+    // WebGL 不可用，回退提示
+    document.body.innerHTML='<div style="color:#fff;font-family:sans-serif;padding:40px">你的浏览器不支持 WebGL，无法运行本游戏。</div>';
+    return;
+  }
+  requestAnimationFrame(loop);
+
+  if(DEMO){
+    // 免手势直接开局
+    setTimeout(()=>{ beginGame(); }, 300);
+    startRecordingIfNeeded();
+  }
+}
+
+// ============================================================
+//  ?record=N 录制主 canvas → webm 下载
+// ============================================================
+function startRecordingIfNeeded(){
+  if(!REC_SEC) return;
+  setTimeout(()=>{
+    try{
+      const cv = glcv; // 主 canvas
+      const stream = cv.captureStream(30);
+      if(!stream || stream.getVideoTracks().length===0){
+        console.warn('no video track'); return;
+      }
+      let mt='video/webm;codecs=vp9';
+      if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+      const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+      const chunks=[];
+      mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+      mr.onstop=()=>{
+        const b=new Blob(chunks,{type:'video/webm'});
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(b); a.download='neon-tunnel.webm';
+        document.body.appendChild(a); try{a.click()}catch(e){}
+      };
+      mr.start(250);
+      setTimeout(()=>{ try{mr.stop()}catch(e){} }, REC_SEC*1000);
+    }catch(e){ console.warn('record fail',e); }
+  }, 700);
+}
+
+boot();
+
+})();
+</script>
+</body>
+</html>

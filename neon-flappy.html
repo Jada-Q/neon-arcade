@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON FLAPPY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 全局：合成波 OutRun 风格 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8; --gold:#ffd95e; --green:#5effa0;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#160a36; }
+  body{
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+    /* 日落渐变 */
+    background:linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+    touch-action:none; -webkit-tap-highlight-color:transparent;
+  }
+  /* 游戏容器（竖屏） */
+  #wrap{
+    position:relative; height:100vh; aspect-ratio:9/16; max-width:100vw;
+    box-shadow:0 0 40px rgba(255,46,136,.4), inset 0 0 60px rgba(94,240,255,.08);
+    overflow:hidden;
+  }
+  canvas{ display:block; width:100%; height:100%; image-rendering:pixelated; }
+
+  /* CRT 扫描线（极轻） */
+  #crt{
+    position:absolute; inset:0; pointer-events:none; z-index:30; mix-blend-mode:overlay; opacity:.35;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.0) 0, rgba(0,0,0,.0) 2px, rgba(0,0,0,.5) 3px, rgba(0,0,0,.0) 4px);
+  }
+
+  /* ===== HUD ===== */
+  #hud{
+    position:absolute; top:14px; left:0; right:0; z-index:20; pointer-events:none;
+    display:flex; justify-content:center; flex-direction:column; align-items:center; gap:6px;
+  }
+  #score{
+    font-family:'Press Start 2P',monospace; font-size:34px; color:#fff;
+    text-shadow:0 0 8px var(--cyan), 3px 3px 0 var(--pink);
+  }
+  #best{
+    font-family:'Press Start 2P',monospace; font-size:11px; color:var(--gold);
+    text-shadow:0 0 6px var(--gold);
+  }
+
+  /* 静音按钮 */
+  #mute{
+    position:absolute; top:12px; right:12px; z-index:25; cursor:pointer;
+    font-family:'Press Start 2P',monospace; font-size:11px; color:var(--cyan);
+    background:rgba(20,8,40,.7); border:2px solid var(--cyan); padding:8px 9px;
+    box-shadow:4px 4px 0 var(--pink); user-select:none;
+  }
+  #mute:active{ transform:translate(2px,2px); box-shadow:2px 2px 0 var(--pink); }
+
+  /* ===== 遮罩 ===== */
+  .mask{
+    position:absolute; inset:0; z-index:40; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:22px; text-align:center; padding:24px;
+    background:radial-gradient(circle at 50% 38%, rgba(58,20,87,.55), rgba(22,10,54,.92));
+    backdrop-filter:blur(1px);
+  }
+  .mask.hidden{ display:none; }
+  .title{
+    font-family:'Press Start 2P',monospace; font-size:30px; line-height:1.5; color:var(--magenta);
+    text-shadow:0 0 12px var(--pink), 4px 4px 0 var(--cyan);
+  }
+  .title .sub{ display:block; font-size:14px; color:var(--cyan); margin-top:14px; text-shadow:0 0 8px var(--cyan); }
+  .gameover{ color:var(--pink); text-shadow:0 0 12px var(--pink), 4px 4px 0 var(--gold); }
+  .panel{
+    font-family:'Chakra Petch',sans-serif; font-size:16px; color:#fff; line-height:1.9;
+    background:rgba(20,8,40,.6); border:2px solid var(--magenta); padding:16px 22px;
+    box-shadow:4px 4px 0 var(--cyan);
+  }
+  .panel b{ color:var(--gold); }
+  .btn{
+    font-family:'Press Start 2P',monospace; font-size:14px; color:#160a36; cursor:pointer;
+    background:var(--green); border:none; padding:16px 22px; letter-spacing:1px;
+    box-shadow:5px 5px 0 var(--pink); user-select:none;
+  }
+  .btn:active{ transform:translate(3px,3px); box-shadow:2px 2px 0 var(--pink); }
+  .blink{ animation:bk 1s steps(2,start) infinite; }
+  @keyframes bk{ 50%{ opacity:.25; } }
+  .scoreline{ font-family:'Press Start 2P',monospace; font-size:18px; color:var(--gold); text-shadow:0 0 8px var(--gold); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="crt"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="score">0</div>
+    <div id="best">BEST 0</div>
+  </div>
+  <div id="mute">♪ ON</div>
+
+  <!-- 开始遮罩 -->
+  <div id="startMask" class="mask">
+    <div class="title">NEON<br>FLAPPY<span class="sub">霓虹小鸟</span></div>
+    <div class="panel">
+      点击 / 空格 / ↑ &nbsp;<b>扑扇</b><br>
+      穿过霓虹管道缝隙得分<br>
+      撞管道或上下边界即 <b>GAME OVER</b>
+    </div>
+    <button class="btn blink" id="startBtn">▶ START</button>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div id="overMask" class="mask hidden">
+    <div class="title gameover">GAME<br>OVER</div>
+    <div class="panel">
+      <div class="scoreline">SCORE <span id="finalScore">0</span></div>
+      <div class="scoreline">BEST &nbsp;<span id="finalBest">0</span></div>
+    </div>
+    <button class="btn blink" id="retryBtn">↺ RETRY</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   NEON FLAPPY  —  合成波 OutRun 风 Flappy Bird
+   单文件自包含。原生 Canvas 2D + Web Audio。
+   URL 参数:
+     ?demo        免手势自动开局 + AI 自动游玩(失败自动重开)
+     ?record=N    自动演示并录制主 canvas N 秒后下载 neon-flappy.webm
+   ========================================================================= */
+
+(function(){
+
+// ---------- DOM ----------
+const cv      = document.getElementById('cv');
+const ctx     = cv.getContext('2d');
+const wrap    = document.getElementById('wrap');
+const scoreEl = document.getElementById('score');
+const bestEl  = document.getElementById('best');
+const muteEl  = document.getElementById('mute');
+const startMask = document.getElementById('startMask');
+const overMask  = document.getElementById('overMask');
+const startBtn  = document.getElementById('startBtn');
+const retryBtn  = document.getElementById('retryBtn');
+const finalScoreEl = document.getElementById('finalScore');
+const finalBestEl  = document.getElementById('finalBest');
+
+// ---------- URL 参数 ----------
+const params   = new URLSearchParams(location.search);
+const DEMO     = params.has('demo') || params.has('record');
+const RECORD_S = params.has('record') ? Math.max(1, parseInt(params.get('record')||'20',10)) : 0;
+
+// ---------- 逻辑分辨率（竖屏 9:16）----------
+const VW = 360, VH = 640;   // 虚拟坐标系
+let scale = 1, dpr = 1;
+
+// ---------- 状态 ----------
+const ST = { READY:0, PLAY:1, OVER:2 };
+let state = ST.READY;
+
+let best = 0;
+try{ best = parseInt(localStorage.getItem('neonFlappyBest')||'0',10) || 0; }catch(e){ best = 0; }
+bestEl.textContent = 'BEST ' + best;
+
+// ---------- 物理 / 难度参数 ----------
+const GRAV   = 1500;     // 重力 px/s^2
+const FLAP   = -430;     // 扑扇瞬时速度 px/s
+const MAXV   = 620;      // 最大下落速度
+const PIPE_W = 60;       // 管道宽
+const SPEED0 = 165;      // 初始水平速度 px/s
+const GAP0   = 175;      // 初始缝隙高度
+const GAP_MIN= 120;      // 最小缝隙
+const SPACE0 = 230;      // 初始管道水平间距
+const SPACE_MIN = 170;   // 最小间距
+
+// 小鸟
+const bird = { x:VW*0.30, y:VH*0.45, vy:0, r:15, rot:0, flapT:0 };
+
+// 管道数组：{x, gapY(缝隙中心), gap(缝隙高度), scored}
+let pipes = [];
+let scrollSpeed = SPEED0;
+let curGap   = GAP0;
+let curSpace = SPACE0;
+let nextPipeX = 0;        // 下一根管道生成的 x（用于控制间距）
+
+let score = 0;
+let time  = 0;            // 累计时间（背景动画用）
+let shake = 0;            // 撞击屏震
+let particles = [];       // 撞击/得分粒子
+let flashT = 0;           // 得分闪光
+
+// 远景元素（合成波太阳/网格）随时间滚动
+let gridOff = 0;
+
+// =========================================================================
+//  音频（Web Audio 程序化）
+// =========================================================================
+let actx = null, master = null, musicGain = null, sfxGain = null;
+let muted = false, musicTimer = null;
+
+function initAudio(){
+  if(actx) return;
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    actx = new AC();
+    master = actx.createGain();    master.gain.value = 0.9; master.connect(actx.destination);
+    musicGain = actx.createGain(); musicGain.gain.value = 0.32; musicGain.connect(master);
+    sfxGain = actx.createGain();   sfxGain.gain.value = 0.5;  sfxGain.connect(master);
+    startMusic();
+  }catch(e){ actx = null; }
+}
+function resumeAudio(){ if(actx && actx.state === 'suspended'){ actx.resume().catch(()=>{}); } }
+
+// 简单音效（震荡器）
+function blip(freq, dur, type, gain, slideTo){
+  if(!actx || muted) return;
+  try{
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type || 'square';
+    const t0 = actx.currentTime;
+    o.frequency.setValueAtTime(freq, t0);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(40,slideTo), t0+dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(gain||0.4, t0+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    o.connect(g); g.connect(sfxGain);
+    o.start(t0); o.stop(t0+dur+0.02);
+  }catch(e){}
+}
+function sfxFlap(){ blip(620, 0.10, 'square', 0.35, 380); }
+function sfxScore(){ blip(880, 0.08, 'square', 0.4); setTimeout(()=>blip(1320,0.10,'square',0.4),60); }
+function sfxHit(){
+  blip(180, 0.30, 'sawtooth', 0.5, 60);
+  // 噪声爆裂
+  if(!actx || muted) return;
+  try{
+    const len = actx.sampleRate*0.3, buf = actx.createBuffer(1,len,actx.sampleRate), d = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = (Math.random()*2-1)*Math.pow(1-i/len,2);
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const g = actx.createGain(); g.gain.value = 0.4;
+    src.connect(g); g.connect(sfxGain); src.start();
+  }catch(e){}
+}
+
+// 合成波循环配乐（程序化 bass + arp）
+const SCALE = [0,3,5,7,10];           // 小调五声音阶
+const ROOT  = 110;                    // A2
+let musicStep = 0;
+function noteFreq(semi){ return ROOT * Math.pow(2, semi/12); }
+function startMusic(){
+  if(musicTimer) clearInterval(musicTimer);
+  const beat = 0.28*1000; // 节拍
+  musicTimer = setInterval(()=>{
+    if(!actx || muted || actx.state!=='running') return;
+    try{
+      const t0 = actx.currentTime;
+      // bass：每 4 步一个低音
+      if(musicStep % 2 === 0){
+        const bo = actx.createOscillator(), bg = actx.createGain();
+        bo.type='sawtooth';
+        const root = noteFreq(SCALE[(Math.floor(musicStep/4))%SCALE.length]);
+        bo.frequency.value = root/2;
+        bg.gain.setValueAtTime(0.0001,t0);
+        bg.gain.exponentialRampToValueAtTime(0.22,t0+0.02);
+        bg.gain.exponentialRampToValueAtTime(0.0001,t0+0.26);
+        bo.connect(bg); bg.connect(musicGain); bo.start(t0); bo.stop(t0+0.3);
+      }
+      // arp 琶音
+      const semi = SCALE[musicStep%SCALE.length] + 12 + (Math.floor(musicStep/8)%2)*12;
+      const ao = actx.createOscillator(), ag = actx.createGain();
+      ao.type='square';
+      ao.frequency.value = noteFreq(semi);
+      ag.gain.setValueAtTime(0.0001,t0);
+      ag.gain.exponentialRampToValueAtTime(0.12,t0+0.01);
+      ag.gain.exponentialRampToValueAtTime(0.0001,t0+0.18);
+      ao.connect(ag); ag.connect(musicGain); ao.start(t0); ao.stop(t0+0.2);
+      musicStep++;
+    }catch(e){}
+  }, beat);
+}
+
+muteEl.addEventListener('click', (e)=>{
+  e.stopPropagation();
+  muted = !muted;
+  muteEl.textContent = muted ? '♪ OFF' : '♪ ON';
+  muteEl.style.color = muted ? '#888' : 'var(--cyan)';
+  muteEl.style.borderColor = muted ? '#888' : 'var(--cyan)';
+  if(master) master.gain.value = muted ? 0 : 0.9;
+});
+
+// =========================================================================
+//  自适应尺寸（仅在真正变化时重设，录制期间不打断）
+// =========================================================================
+function resize(){
+  const rect = wrap.getBoundingClientRect();
+  dpr = Math.min(window.devicePixelRatio||1, 2);
+  const w = Math.round(rect.width * dpr);
+  const h = Math.round(rect.height * dpr);
+  if(cv.width !== w || cv.height !== h){
+    cv.width = w; cv.height = h;
+  }
+  scale = cv.height / VH;   // 以高度为基准缩放虚拟坐标
+}
+window.addEventListener('resize', resize);
+
+// =========================================================================
+//  游戏控制
+// =========================================================================
+function resetGame(){
+  bird.x = VW*0.30; bird.y = VH*0.45; bird.vy = 0; bird.rot = 0; bird.flapT = 0;
+  pipes = [];
+  scrollSpeed = SPEED0; curGap = GAP0; curSpace = SPACE0;
+  score = 0; scoreEl.textContent = '0';
+  particles = []; shake = 0; flashT = 0;
+  // 预生成首批管道
+  let x = VW + 60;
+  for(let i=0;i<4;i++){
+    pipes.push(makePipe(x));
+    x += curSpace + PIPE_W;
+  }
+  nextPipeX = x;
+}
+
+function makePipe(x){
+  const margin = 70;
+  const gy = margin + curGap/2 + Math.random()*(VH - 2*margin - curGap);
+  return { x:x, gapY:gy, gap:curGap, scored:false };
+}
+
+function startGame(){
+  startMask.classList.add('hidden');
+  overMask.classList.add('hidden');
+  resetGame();
+  state = ST.PLAY;
+}
+
+function flap(){
+  if(state === ST.READY){ startGame(); }
+  if(state === ST.PLAY){
+    bird.vy = FLAP;
+    bird.flapT = 0.14;
+    sfxFlap();
+    // 扑扇粒子
+    for(let i=0;i<4;i++){
+      particles.push({ x:bird.x-8, y:bird.y+6, vx:-60-Math.random()*40, vy:20+Math.random()*40,
+        life:0.4, max:0.4, c:'#5ef0ff', r:2+Math.random()*2 });
+    }
+  } else if(state === ST.OVER){
+    // 结束后点击回到开始/重开
+    if(overReady) startGame();
+  }
+}
+let overReady = false;  // 防止 GAME OVER 瞬间误触重开
+
+function gameOver(){
+  if(state !== ST.PLAY) return;
+  state = ST.OVER;
+  sfxHit();
+  shake = 16;
+  // 撞击粒子爆裂
+  const cols = ['#ff2e88','#5ef0ff','#ffd95e','#ff5ec8','#5effa0'];
+  for(let i=0;i<28;i++){
+    const a = Math.random()*Math.PI*2, sp = 80+Math.random()*220;
+    particles.push({ x:bird.x, y:bird.y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+      life:0.7, max:0.7, c:cols[i%cols.length], r:2+Math.random()*3 });
+  }
+  if(score > best){
+    best = score;
+    try{ localStorage.setItem('neonFlappyBest', String(best)); }catch(e){}
+  }
+  bestEl.textContent = 'BEST ' + best;
+  finalScoreEl.textContent = score;
+  finalBestEl.textContent = best;
+  overMask.classList.remove('hidden');
+  overReady = false;
+  setTimeout(()=>{ overReady = true; }, 600);
+}
+
+// =========================================================================
+//  AI 自动演示
+//  策略：预测小鸟到下一缝隙水平距离时的纵向落点，
+//        若预测会偏低于缝隙中心(略偏上以留余量)则扑扇。
+// =========================================================================
+let aiCooldown = 0;
+function aiThink(dt){
+  aiCooldown -= dt;
+  // 找到位于小鸟前方的最近缝隙
+  let target = null;
+  for(const p of pipes){
+    if(p.x + PIPE_W > bird.x - 4){ target = p; break; }
+  }
+  const targetY = target ? target.gapY : VH*0.45;
+  // 目标点略高于缝隙中心（重力会拉回），留出余量
+  const aim = targetY - 18;
+  // 预测短时间后位置（防止贴近时反应不及）
+  const lookahead = 0.10;
+  const predictY = bird.y + bird.vy*lookahead + 0.5*GRAV*lookahead*lookahead;
+  // 若预测低于目标且正在下落 -> 扑扇
+  if(aiCooldown <= 0){
+    if(predictY > aim && bird.vy > -60){
+      flap();
+      aiCooldown = 0.16;   // 防止狂按
+    }
+  }
+  // 安全网：太靠近上边界别扑
+  if(bird.y < 40 && bird.vy < 0){ /* 不扑，自然下落 */ }
+}
+
+// =========================================================================
+//  更新
+// =========================================================================
+function update(dt){
+  try{
+    time += dt;
+    gridOff = (gridOff + scrollSpeed*dt*0.5) % 40;
+    if(flashT>0) flashT -= dt;
+    if(shake>0){ shake -= dt*60; if(shake<0) shake=0; }
+
+    // 粒子
+    for(let i=particles.length-1;i>=0;i--){
+      const pt = particles[i];
+      pt.life -= dt;
+      if(pt.life<=0){ particles.splice(i,1); continue; }
+      pt.x += pt.vx*dt; pt.y += pt.vy*dt; pt.vy += 200*dt;
+    }
+
+    if(state !== ST.PLAY) return;
+
+    // AI
+    if(DEMO) aiThink(dt);
+
+    // 小鸟物理
+    bird.vy += GRAV*dt;
+    if(bird.vy > MAXV) bird.vy = MAXV;
+    bird.y += bird.vy*dt;
+    if(bird.flapT>0) bird.flapT -= dt;
+    // 旋转：根据速度
+    const targetRot = Math.max(-0.5, Math.min(1.4, bird.vy/500));
+    bird.rot += (targetRot - bird.rot) * Math.min(1, dt*10);
+
+    // 难度递增（随分数缩小缝隙与间距、提速）
+    curGap   = Math.max(GAP_MIN, GAP0 - score*3.0);
+    curSpace = Math.max(SPACE_MIN, SPACE0 - score*2.0);
+    scrollSpeed = SPEED0 + score*3.0;
+    if(scrollSpeed > 320) scrollSpeed = 320;
+
+    // 管道移动
+    for(const p of pipes){
+      p.x -= scrollSpeed*dt;
+      // 计分
+      if(!p.scored && p.x + PIPE_W < bird.x){
+        p.scored = true;
+        score++;
+        scoreEl.textContent = score;
+        flashT = 0.18;
+        sfxScore();
+        // 得分粒子
+        for(let i=0;i<8;i++){
+          const a=Math.random()*Math.PI*2, sp=40+Math.random()*120;
+          particles.push({ x:bird.x, y:bird.y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+            life:0.5, max:0.5, c:'#ffd95e', r:2+Math.random()*2 });
+        }
+      }
+    }
+    // 移除离屏管道
+    while(pipes.length && pipes[0].x + PIPE_W < -10) pipes.shift();
+    // 生成新管道（保持队列）
+    const lastX = pipes.length ? pipes[pipes.length-1].x : 0;
+    if(lastX < VW + 60){
+      pipes.push(makePipe(lastX + curSpace + PIPE_W));
+    }
+
+    // 碰撞：上下边界
+    if(bird.y - bird.r < 0){ bird.y = bird.r; bird.vy=0; }
+    if(bird.y + bird.r > VH){ bird.y = VH - bird.r; gameOver(); return; }
+
+    // 碰撞：管道（圆-矩形）
+    for(const p of pipes){
+      if(p.x + PIPE_W < bird.x - bird.r || p.x > bird.x + bird.r) continue;
+      const topH = p.gapY - p.gap/2;
+      const botY = p.gapY + p.gap/2;
+      if(circleRect(bird.x,bird.y,bird.r, p.x,0,PIPE_W,topH) ||
+         circleRect(bird.x,bird.y,bird.r, p.x,botY,PIPE_W,VH-botY)){
+        gameOver(); return;
+      }
+    }
+  }catch(e){ /* update 容错 */ }
+}
+
+function circleRect(cx,cy,r, rx,ry,rw,rh){
+  const nx = Math.max(rx, Math.min(cx, rx+rw));
+  const ny = Math.max(ry, Math.min(cy, ry+rh));
+  const dx = cx-nx, dy = cy-ny;
+  return dx*dx+dy*dy < r*r;
+}
+
+// =========================================================================
+//  绘制
+// =========================================================================
+function draw(){
+  try{
+    const W = cv.width, H = cv.height;
+    ctx.setTransform(1,0,0,1,0,0);
+    // 屏震偏移
+    let sx=0, sy=0;
+    if(shake>0){ sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; }
+    // 把虚拟坐标映射到画布（居中，按高度缩放）
+    const s = H/VH;
+    const offX = (W - VW*s)/2;
+    ctx.save();
+    ctx.translate(offX+sx, sy);
+    ctx.scale(s,s);
+
+    // ----- 背景：合成波日落 -----
+    drawBackground();
+
+    // ----- 管道 -----
+    for(const p of pipes) drawPipe(p);
+
+    // ----- 粒子 -----
+    for(const pt of particles){
+      ctx.globalAlpha = Math.max(0, pt.life/pt.max);
+      ctx.fillStyle = pt.c;
+      ctx.shadowColor = pt.c; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+    // ----- 小鸟 -----
+    drawBird();
+
+    // ----- 得分闪光 -----
+    if(flashT>0){
+      ctx.globalAlpha = (flashT/0.18)*0.18;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,VW,VH);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }catch(e){ /* draw 容错 */ }
+}
+
+function drawBackground(){
+  // 渐变天空
+  const g = ctx.createLinearGradient(0,0,0,VH);
+  g.addColorStop(0.00,'#160a36');
+  g.addColorStop(0.30,'#3a1457');
+  g.addColorStop(0.50,'#7a2a6e');
+  g.addColorStop(0.64,'#ff5e7e');
+  g.addColorStop(0.72,'#ff9a4d');
+  g.addColorStop(1.00,'#160a36');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,VW,VH);
+
+  // 合成波太阳（带横向扫描线）
+  const sunY = VH*0.40, sunR = 95;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(VW/2, sunY, sunR, 0, Math.PI*2); ctx.clip();
+  const sg = ctx.createLinearGradient(0,sunY-sunR,0,sunY+sunR);
+  sg.addColorStop(0,'#ffd95e'); sg.addColorStop(0.5,'#ff5ec8'); sg.addColorStop(1,'#ff2e88');
+  ctx.fillStyle = sg; ctx.fillRect(VW/2-sunR, sunY-sunR, sunR*2, sunR*2);
+  // 太阳扫描线（下半部分留白带）
+  ctx.fillStyle = '#160a36';
+  for(let i=0;i<8;i++){
+    const yy = sunY + 6 + i*9 + (i*i)*1.0;
+    ctx.fillRect(VW/2-sunR, yy, sunR*2, 3.5+i*0.7);
+  }
+  ctx.restore();
+  // 太阳光晕
+  ctx.shadowColor='#ff5ec8'; ctx.shadowBlur=40;
+  ctx.strokeStyle='rgba(255,94,200,.5)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(VW/2,sunY,sunR,0,Math.PI*2); ctx.stroke();
+  ctx.shadowBlur=0;
+
+  // 远景透视网格（地平线下）
+  const horizon = VH*0.72;
+  ctx.strokeStyle='rgba(94,240,255,.30)'; ctx.lineWidth=1;
+  // 横线
+  for(let i=0;i<14;i++){
+    const t = i/14;
+    const y = horizon + Math.pow(t,2.0)*(VH-horizon)*1.4;
+    if(y>VH) break;
+    ctx.globalAlpha = 0.5*(1-t)+0.15;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(VW,y); ctx.stroke();
+  }
+  // 纵线（向地平线灭点汇聚）
+  const vanish = VW/2;
+  for(let i=-7;i<=7;i++){
+    ctx.globalAlpha = 0.35;
+    const bx = vanish + i*((VW/2)/3.0) - (gridOff*i*0.02);
+    ctx.beginPath(); ctx.moveTo(vanish + i*4, horizon); ctx.lineTo(bx*2-vanish, VH); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // 星星
+  ctx.fillStyle='rgba(255,255,255,.6)';
+  for(let i=0;i<18;i++){
+    const sx=( (i*61) % VW );
+    const sy=( (i*37) % (VH*0.30) );
+    const tw = 0.5+0.5*Math.sin(time*2 + i);
+    ctx.globalAlpha = 0.3+tw*0.5;
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function neonPipeBody(x,y,w,h,col){
+  // 主体
+  ctx.fillStyle = 'rgba(22,10,54,0.85)';
+  ctx.fillRect(x,y,w,h);
+  // 霓虹边框 + 硬投影感
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 3;
+  ctx.shadowColor = col; ctx.shadowBlur = 14;
+  ctx.strokeRect(x+1.5,y+1.5,w-3,h-3);
+  ctx.shadowBlur = 0;
+  // 内部纵向霓虹条
+  ctx.strokeStyle = 'rgba(94,240,255,.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x+w*0.5, y+4); ctx.lineTo(x+w*0.5, y+h-4); ctx.stroke();
+}
+
+function drawPipe(p){
+  const topH = p.gapY - p.gap/2;
+  const botY = p.gapY + p.gap/2;
+  const col = '#ff2e88', cap='#5ef0ff';
+  // 上管
+  neonPipeBody(p.x, 0, PIPE_W, Math.max(0,topH), col);
+  // 下管
+  neonPipeBody(p.x, botY, PIPE_W, Math.max(0,VH-botY), col);
+  // 缝隙边缘高亮（青色帽檐）
+  ctx.fillStyle = cap; ctx.shadowColor = cap; ctx.shadowBlur = 16;
+  ctx.fillRect(p.x-3, topH-7, PIPE_W+6, 7);
+  ctx.fillRect(p.x-3, botY,   PIPE_W+6, 7);
+  ctx.shadowBlur = 0;
+}
+
+function drawBird(){
+  ctx.save();
+  ctx.translate(bird.x, bird.y);
+  ctx.rotate(bird.rot);
+
+  const r = bird.r;
+  // 光晕身体
+  ctx.shadowColor = '#5ef0ff'; ctx.shadowBlur = 18;
+  // 身体（霓虹品红/粉渐变）
+  const bg = ctx.createLinearGradient(-r,-r,r,r);
+  bg.addColorStop(0,'#5ef0ff'); bg.addColorStop(0.6,'#ff5ec8'); bg.addColorStop(1,'#ff2e88');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // 边框
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.stroke();
+
+  // 翅膀（扑扇动画）
+  const wf = bird.flapT>0 ? -1 : 1;
+  ctx.fillStyle = '#ffd95e';
+  ctx.shadowColor='#ffd95e'; ctx.shadowBlur=8;
+  ctx.beginPath();
+  ctx.ellipse(-3, wf*-4, 9, 6, wf*-0.5, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur=0;
+
+  // 眼睛
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(r*0.4, -r*0.3, 4, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#160a36';
+  ctx.beginPath(); ctx.arc(r*0.55, -r*0.3, 2, 0, Math.PI*2); ctx.fill();
+
+  // 喙
+  ctx.fillStyle = '#ff9a4d';
+  ctx.beginPath();
+  ctx.moveTo(r*0.8, 0); ctx.lineTo(r*1.5, -3); ctx.lineTo(r*1.5, 4); ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// =========================================================================
+//  主循环 rAF + delta time
+// =========================================================================
+let lastT = performance.now();
+function loop(now){
+  let dt = (now - lastT)/1000;
+  lastT = now;
+  if(dt > 0.05) dt = 0.05;   // 防卡顿大跳
+  resize();
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// =========================================================================
+//  输入
+// =========================================================================
+function onPress(e){
+  // 静音按钮自身处理
+  if(e.target === muteEl) return;
+  initAudio(); resumeAudio();
+  flap();
+}
+window.addEventListener('keydown', (e)=>{
+  if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){
+    e.preventDefault(); initAudio(); resumeAudio(); flap();
+  }
+});
+wrap.addEventListener('mousedown', onPress);
+wrap.addEventListener('touchstart', (e)=>{ e.preventDefault(); onPress(e); }, {passive:false});
+startBtn.addEventListener('click', (e)=>{ e.stopPropagation(); initAudio(); resumeAudio(); startGame(); });
+retryBtn.addEventListener('click', (e)=>{ e.stopPropagation(); initAudio(); resumeAudio(); startGame(); });
+
+// =========================================================================
+//  启动
+// =========================================================================
+resize();
+resetGame();
+state = ST.READY;
+requestAnimationFrame(loop);
+
+// ---------- DEMO / RECORD ----------
+function autoDemoBoot(){
+  // 免手势开局；演示中 AI 接管。音频需手势，演示时尝试静默启动（可能被策略拦截，不影响画面）
+  try{ initAudio(); resumeAudio(); }catch(e){}
+  startGame();
+  // 演示失败自动重开
+  setInterval(()=>{
+    if(state === ST.OVER){ overReady = true; startGame(); }
+  }, 1100);
+}
+
+function startRecording(seconds){
+  try{
+    // 能力检测：无 captureStream / MediaRecorder 的浏览器直接放弃（演示画面不受影响）
+    if(typeof cv.captureStream !== 'function' || typeof MediaRecorder === 'undefined'){
+      console.warn('当前浏览器不支持 canvas 录制'); return;
+    }
+    // 确认 canvas 尺寸有效
+    if(!cv.width || !cv.height){ resize(); }
+    const stream = cv.captureStream(30);
+    if(!stream || stream.getVideoTracks().length===0){ console.warn('无视频轨'); return; }
+    let mt='video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[];
+    mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{
+      const b=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='neon-flappy.webm';
+      document.body.appendChild(a); try{a.click()}catch(e){}
+    };
+    mr.start(250);
+    setTimeout(()=>{ try{mr.stop()}catch(e){} }, seconds*1000);
+  }catch(e){ console.warn('录制失败', e); }
+}
+
+if(DEMO){
+  // 等字体/布局稳定后开局
+  setTimeout(()=>{
+    autoDemoBoot();
+    if(RECORD_S>0) setTimeout(()=>startRecording(RECORD_S), 400);
+  }, 300);
+}
+
+})();
+</script>
+</body>
+</html>

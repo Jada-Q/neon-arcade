@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON CARDS · 翻牌记忆配对</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ===== 合成波 OutRun 主题变量 ===== */
+:root{
+  --pink:#ff2e88;
+  --cyan:#5ef0ff;
+  --magenta:#ff5ec8;
+  --gold:#ffd95e;
+  --green:#5effa0;
+  --bg0:#160e2e;   /* 深夜紫 */
+  --bg1:#3a1052;   /* 日落紫红 */
+  --bg2:#ff5e3a;   /* 远处落日橙(渐隐) */
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+  background:var(--bg0);
+  color:#fff;
+  overflow:hidden;
+  -webkit-tap-highlight-color:transparent;
+  user-select:none;
+  touch-action:manipulation;
+}
+
+/* 背景:日落渐变 + 地平线网格 */
+#bgwrap{position:fixed;inset:0;z-index:0;overflow:hidden;}
+#sky{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(120% 80% at 50% 78%, rgba(255,94,200,.35), transparent 60%),
+    linear-gradient(180deg,#0c0820 0%,#2a0d4a 38%,#6a1357 60%,#ff5e3a 82%,#ffb24a 100%);
+}
+/* 落日圆 */
+#sun{
+  position:absolute;left:50%;top:60%;transform:translate(-50%,-50%);
+  width:46vmin;height:46vmin;border-radius:50%;
+  background:linear-gradient(180deg,#ffd95e 0%,#ff5ec8 55%,#ff2e88 100%);
+  filter:blur(.3px);
+  box-shadow:0 0 60px 10px rgba(255,94,200,.55);
+  -webkit-mask:repeating-linear-gradient(180deg,#000 0 7%,transparent 7% 9%);
+          mask:repeating-linear-gradient(180deg,#000 0 7%,transparent 7% 9%);
+  opacity:.9;
+}
+/* 透视地面网格 */
+#grid{
+  position:absolute;left:-25%;right:-25%;bottom:0;height:46%;
+  background-image:
+    linear-gradient(rgba(94,240,255,.5) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,46,136,.45) 1px,transparent 1px);
+  background-size:48px 48px;
+  transform:perspective(320px) rotateX(68deg);
+  transform-origin:bottom center;
+  animation:gridmove 1.6s linear infinite;
+  opacity:.55;
+}
+@keyframes gridmove{from{background-position:0 0;}to{background-position:0 48px;}}
+/* CRT 扫描线极轻叠加 */
+#crt{
+  position:fixed;inset:0;z-index:50;pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);
+  mix-blend-mode:multiply;opacity:.5;
+}
+
+/* ===== 布局 ===== */
+#app{position:relative;z-index:10;height:100%;display:flex;flex-direction:column;}
+
+/* HUD */
+#hud{
+  display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:center;
+  padding:10px 12px 4px;
+}
+.stat{
+  font-family:'Press Start 2P',monospace;font-size:11px;line-height:1.4;
+  padding:6px 10px;border-radius:8px;
+  background:rgba(8,4,22,.55);border:1px solid rgba(94,240,255,.4);
+  box-shadow:0 0 10px rgba(94,240,255,.25) inset;
+  white-space:nowrap;
+}
+.stat .lbl{color:var(--cyan);}
+.stat .val{color:#fff;}
+.stat.score .val{color:var(--gold);text-shadow:0 0 8px var(--gold);}
+.stat.best .lbl{color:var(--magenta);}
+.stat.lvl .lbl{color:var(--green);}
+#muteBtn{
+  cursor:pointer;font-family:'Press Start 2P',monospace;font-size:11px;
+  padding:6px 10px;border-radius:8px;color:var(--pink);
+  background:rgba(8,4,22,.55);border:1px solid var(--pink);
+  box-shadow:0 0 10px rgba(255,46,136,.35);
+}
+
+/* 棋盘容器 */
+#boardWrap{flex:1;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0;}
+#board{
+  display:grid;gap:clamp(6px,1.6vmin,14px);
+  perspective:900px; /* 3D 翻转透视 */
+}
+
+/* ===== 卡牌 ===== */
+.card{
+  position:relative;width:100%;height:100%;
+  transform-style:preserve-3d;
+  transition:transform .45s cubic-bezier(.2,.7,.3,1.2);
+  cursor:pointer;
+}
+.card.flip{transform:rotateY(180deg);}      /* 翻开 */
+.card.matched{animation:matchPop .55s ease forwards;cursor:default;}
+@keyframes matchPop{
+  0%{transform:rotateY(180deg) scale(1);}
+  40%{transform:rotateY(180deg) scale(1.14);filter:brightness(1.8);}
+  100%{transform:rotateY(180deg) scale(.55);opacity:0;filter:brightness(2.5);}
+}
+.face{
+  position:absolute;inset:0;border-radius:12px;
+  backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
+}
+/* 牌背(初始正面朝向用户) */
+.back{
+  background:
+    repeating-linear-gradient(45deg,rgba(255,46,136,.16) 0 8px,transparent 8px 16px),
+    linear-gradient(135deg,#1c0c3a,#33114f);
+  border:2px solid var(--cyan);
+  box-shadow:0 0 12px rgba(94,240,255,.55),0 0 22px rgba(255,46,136,.3) inset;
+}
+.back::after{
+  content:"◈";font-size:clamp(18px,5vmin,40px);color:var(--cyan);
+  text-shadow:0 0 10px var(--cyan),0 0 22px var(--pink);
+  opacity:.9;
+}
+/* 牌面(符号,旋转 180 度在背后) */
+.front{
+  transform:rotateY(180deg);
+  background:linear-gradient(135deg,#0e0726,#241043);
+  border:2px solid var(--gold);
+  box-shadow:0 0 14px rgba(255,217,94,.5),0 0 26px rgba(255,94,200,.25) inset;
+}
+.front .sym{
+  font-size:clamp(22px,7vmin,54px);
+  filter:drop-shadow(0 0 8px currentColor) drop-shadow(0 0 16px currentColor);
+  line-height:1;
+}
+.card.matched .front{border-color:var(--green);box-shadow:0 0 24px var(--green);}
+
+/* 遮罩(开始/结束) */
+.overlay{
+  position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:18px;text-align:center;padding:24px;
+  background:radial-gradient(circle at 50% 40%,rgba(34,8,60,.78),rgba(8,4,20,.92));
+  backdrop-filter:blur(3px);
+}
+.overlay.hide{display:none;}
+.title{
+  font-family:'Press Start 2P',monospace;font-size:clamp(20px,6vmin,40px);
+  color:var(--cyan);line-height:1.5;
+  text-shadow:0 0 8px var(--cyan),0 0 20px var(--pink),0 0 40px var(--pink);
+  animation:glowPulse 2s ease-in-out infinite;
+}
+@keyframes glowPulse{50%{text-shadow:0 0 12px var(--cyan),0 0 30px var(--magenta),0 0 60px var(--pink);}}
+.subtitle{font-family:'Press Start 2P',monospace;font-size:clamp(10px,2.6vmin,14px);color:var(--gold);text-shadow:0 0 10px var(--gold);}
+.howto{max-width:540px;font-size:clamp(13px,3.6vmin,17px);line-height:1.8;color:#e9d9ff;}
+.howto b{color:var(--green);}
+.btn{
+  cursor:pointer;font-family:'Press Start 2P',monospace;font-size:clamp(12px,3.2vmin,16px);
+  padding:16px 28px;border-radius:12px;color:#fff;
+  background:linear-gradient(135deg,var(--pink),var(--magenta));
+  border:2px solid var(--cyan);
+  box-shadow:0 0 18px rgba(255,46,136,.7),0 0 30px rgba(94,240,255,.4);
+  transition:transform .12s ease,box-shadow .12s ease;
+}
+.btn:hover,.btn:active{transform:scale(1.06);box-shadow:0 0 28px rgba(255,46,136,.95),0 0 50px rgba(94,240,255,.6);}
+#endStats{font-size:clamp(13px,3.6vmin,18px);line-height:2;color:#fff;}
+#endStats span{color:var(--gold);font-family:'Press Start 2P',monospace;font-size:.85em;}
+
+/* 浮动得分提示 */
+.popscore{
+  position:fixed;z-index:55;pointer-events:none;
+  font-family:'Press Start 2P',monospace;font-size:14px;color:var(--gold);
+  text-shadow:0 0 10px var(--gold);
+  animation:floatUp .8s ease-out forwards;
+}
+@keyframes floatUp{0%{opacity:1;transform:translate(-50%,0) scale(.8);}100%{opacity:0;transform:translate(-50%,-46px) scale(1.2);}}
+
+/* DEMO 角标 */
+#demoTag{
+  position:fixed;top:8px;right:8px;z-index:70;
+  font-family:'Press Start 2P',monospace;font-size:10px;color:#0c0820;
+  background:var(--green);padding:5px 8px;border-radius:6px;
+  box-shadow:0 0 14px var(--green);display:none;
+}
+#demoTag.on{display:block;animation:tagblink 1.1s steps(2) infinite;}
+@keyframes tagblink{50%{opacity:.45;}}
+
+@media (max-width:480px){
+  .stat,#muteBtn{font-size:9px;padding:5px 7px;}
+  #hud{gap:6px 8px;}
+}
+</style>
+</head>
+<body>
+<!-- 背景 -->
+<div id="bgwrap">
+  <div id="sky"></div>
+  <div id="sun"></div>
+  <div id="grid"></div>
+</div>
+<div id="crt"></div>
+<div id="demoTag">▶ AUTO DEMO</div>
+
+<div id="app">
+  <!-- HUD -->
+  <div id="hud">
+    <div class="stat lvl"><span class="lbl">LV </span><span class="val" id="lvlVal">1</span></div>
+    <div class="stat score"><span class="lbl">SCORE </span><span class="val" id="scoreVal">0</span></div>
+    <div class="stat"><span class="lbl">STEP </span><span class="val" id="stepVal">0</span></div>
+    <div class="stat"><span class="lbl">TIME </span><span class="val" id="timeVal">0.0</span></div>
+    <div class="stat best"><span class="lbl">BEST </span><span class="val" id="bestVal">0</span></div>
+    <div id="muteBtn" title="静音切换">♪ ON</div>
+  </div>
+  <!-- 棋盘 -->
+  <div id="boardWrap"><div id="board"></div></div>
+</div>
+
+<!-- 开始遮罩 -->
+<div class="overlay" id="startOverlay">
+  <div class="title">NEON CARDS</div>
+  <div class="subtitle">翻牌记忆配对 · OUTRUN</div>
+  <div class="howto">
+    点击翻开两张卡:相同则 <b>消除得分</b>,不同则翻回。<br>
+    全部配对即 <b>通关</b>,记录步数与用时,关卡逐级增大。<br>
+    支持 <b>键盘方向键 + 回车</b> 与 <b>触屏</b>。
+  </div>
+  <div class="btn" id="startBtn">▶ 开始游戏</div>
+</div>
+
+<!-- 结束/通关遮罩 -->
+<div class="overlay hide" id="endOverlay">
+  <div class="title" id="endTitle">通关!</div>
+  <div id="endStats"></div>
+  <div class="btn" id="nextBtn">▶ 下一关</div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   NEON CARDS — 翻牌记忆配对(纯 DOM/CSS,无 canvas）
+   合成波 OutRun 风格 / 程序化音效 / AI 自动演示
+   ============================================================ */
+
+/* ---------- 全局状态 ---------- */
+const Game = {
+  level:1,
+  score:0,
+  steps:0,
+  startTime:0,
+  elapsed:0,
+  running:false,
+  busy:false,            // 比对动画中,禁止点击
+  first:null,            // 第一张已翻开的卡
+  second:null,
+  matchedCount:0,
+  totalPairs:0,
+  cards:[],              // {el,symbol,color,matched,idx}
+  // 难度:每关的 (列,行),保证偶数张
+  layouts:[ [3,2],[4,2],[4,3],[4,4],[5,4],[6,4],[6,5] ],
+};
+
+/* 霓虹符号库(emoji + 颜色) */
+const SYMBOLS = [
+  {s:"★",c:"#ffd95e"},{s:"✦",c:"#5ef0ff"},{s:"❤",c:"#ff2e88"},
+  {s:"◆",c:"#5effa0"},{s:"☀",c:"#ffd95e"},{s:"☾",c:"#5ef0ff"},
+  {s:"♛",c:"#ff5ec8"},{s:"⚡",c:"#ffd95e"},{s:"❄",c:"#5ef0ff"},
+  {s:"✿",c:"#ff2e88"},{s:"☯",c:"#5effa0"},{s:"♬",c:"#ff5ec8"},
+  {s:"⬢",c:"#5ef0ff"},{s:"✪",c:"#ffd95e"},{s:"❖",c:"#5effa0"},
+  {s:"➤",c:"#ff2e88"},{s:"♠",c:"#5ef0ff"},{s:"♦",c:"#ff5ec8"},
+];
+
+/* ---------- DOM 引用 ---------- */
+const $ = id=>document.getElementById(id);
+const board=$("board"), boardWrap=$("boardWrap");
+const lvlVal=$("lvlVal"), scoreVal=$("scoreVal"), stepVal=$("stepVal"),
+      timeVal=$("timeVal"), bestVal=$("bestVal");
+const startOverlay=$("startOverlay"), endOverlay=$("endOverlay"),
+      endTitle=$("endTitle"), endStats=$("endStats");
+const muteBtn=$("muteBtn"), demoTag=$("demoTag");
+
+/* ---------- localStorage 最高分 ---------- */
+let best = parseInt(localStorage.getItem("neonCardsBest")||"0",10)||0;
+bestVal.textContent = best;
+
+/* ============================================================
+   Web Audio 程序化音效 + 合成波循环配乐
+   ============================================================ */
+const Audio_ = {
+  ctx:null, master:null, muted:false, musicTimer:null, musicStep:0,
+  init(){
+    if(this.ctx) return;
+    try{
+      const AC = window.AudioContext||window.webkitAudioContext;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = 0.5;
+      this.master.connect(this.ctx.destination);
+    }catch(e){ console.warn("audio init fail",e); }
+  },
+  resume(){ if(this.ctx && this.ctx.state==="suspended") this.ctx.resume(); },
+  // 通用音符
+  beep(freq,dur=0.12,type="square",vol=0.3,when=0){
+    if(!this.ctx||this.muted) return;
+    try{
+      const t=this.ctx.currentTime+when;
+      const o=this.ctx.createOscillator(), g=this.ctx.createGain();
+      o.type=type; o.frequency.setValueAtTime(freq,t);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(vol,t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.connect(g); g.connect(this.master);
+      o.start(t); o.stop(t+dur+0.02);
+    }catch(e){}
+  },
+  flip(){ this.beep(520,0.08,"square",0.22); },
+  match(){ // 上行琶音
+    [660,880,1320].forEach((f,i)=>this.beep(f,0.14,"triangle",0.28,i*0.07));
+  },
+  miss(){ this.beep(180,0.18,"sawtooth",0.25); this.beep(120,0.2,"sawtooth",0.2,0.05); },
+  win(){ [523,659,784,1046,1318].forEach((f,i)=>this.beep(f,0.22,"square",0.3,i*0.1)); },
+  click(){ this.beep(740,0.05,"square",0.2); },
+  // 合成波低音循环(简单和弦进行)
+  startMusic(){
+    if(!this.ctx||this.musicTimer) return;
+    const bass=[55,55,73.42,49];      // A1 A1 D2 G1
+    const lead=[440,523,659,587];
+    const stepDur=0.42;
+    const tick=()=>{
+      if(this.muted){ this.musicStep++; return; }
+      const i=this.musicStep%4;
+      this.beep(bass[i],0.4,"sawtooth",0.12);
+      this.beep(bass[i]*2,0.4,"triangle",0.06);
+      if(this.musicStep%2===0) this.beep(lead[i],0.22,"square",0.05);
+      this.musicStep++;
+    };
+    tick();
+    this.musicTimer=setInterval(tick, stepDur*1000);
+  },
+  toggleMute(){
+    this.muted=!this.muted;
+    muteBtn.textContent = this.muted?"♪ OFF":"♪ ON";
+    muteBtn.style.opacity = this.muted?0.5:1;
+  }
+};
+
+/* ============================================================
+   牌局生成
+   ============================================================ */
+function buildLevel(){
+  Game.busy=false; Game.first=null; Game.second=null;
+  Game.matchedCount=0; Game.cards=[]; board.innerHTML="";
+
+  const layoutIdx=Math.min(Game.level-1, Game.layouts.length-1);
+  const [cols,rows]=Game.layouts[layoutIdx];
+  Game.totalPairs=(cols*rows)/2;
+
+  // 选取符号并成对
+  const pool=[...SYMBOLS].sort(()=>Math.random()-0.5).slice(0,Game.totalPairs);
+  let deck=[];
+  pool.forEach(p=>{ deck.push(p); deck.push(p); });
+  deck.sort(()=>Math.random()-0.5);
+
+  // 棋盘网格
+  board.style.gridTemplateColumns=`repeat(${cols},1fr)`;
+  board.style.gridTemplateRows=`repeat(${rows},1fr)`;
+  // 根据可用空间计算卡牌尺寸,使棋盘自适应
+  sizeBoard(cols,rows);
+
+  deck.forEach((p,idx)=>{
+    const card=document.createElement("div");
+    card.className="card";
+    card.dataset.idx=idx;
+    card.innerHTML=`
+      <div class="face back"></div>
+      <div class="face front"><span class="sym" style="color:${p.c}">${p.s}</span></div>`;
+    const obj={el:card,symbol:p.s,color:p.c,matched:false,idx};
+    card.addEventListener("click",()=>onCardClick(obj));
+    board.appendChild(card);
+    Game.cards.push(obj);
+  });
+  updateHUD();
+}
+
+/* 根据容器尺寸设定卡牌大小,保证不溢出 */
+function sizeBoard(cols,rows){
+  const pad=16;
+  const availW=boardWrap.clientWidth-pad;
+  const availH=boardWrap.clientHeight-pad;
+  const gap=Math.max(6,Math.min(14,availW*0.016));
+  const cw=(availW-gap*(cols-1))/cols;
+  const ch=(availH-gap*(rows-1))/rows;
+  // 卡牌略偏竖向(扑克比例 0.72)
+  let size=Math.min(cw, ch*0.72);
+  size=Math.max(42,size);
+  board.style.gap=gap+"px";
+  board.style.gridTemplateColumns=`repeat(${cols},${size}px)`;
+  board.style.gridTemplateRows=`repeat(${rows},${size/0.72}px)`;
+}
+
+/* ============================================================
+   交互逻辑
+   ============================================================ */
+function onCardClick(obj){
+  if(!obj) return;                         // 防御:光标越界等导致的空引用
+  if(!Game.running||Game.busy) return;
+  if(obj.matched) return;
+  if(Game.first===obj) return;            // 同一张不重复
+  if(obj.el.classList.contains("flip")) return;
+
+  Audio_.resume();
+  flipCard(obj,true);
+  Audio_.flip();
+
+  if(!Game.first){
+    Game.first=obj;
+    return;
+  }
+  // 第二张
+  Game.second=obj;
+  Game.steps++;
+  updateHUD();
+  Game.busy=true;
+
+  if(Game.first.symbol===Game.second.symbol){
+    // 配对成功
+    setTimeout(()=>{
+      const a=Game.first,b=Game.second;
+      a.matched=b.matched=true;
+      a.el.classList.add("matched");
+      b.el.classList.add("matched");
+      Audio_.match();
+      const gain=Math.max(20,120-Game.steps*2)+Game.level*10;
+      Game.score+=gain;
+      popScore(b.el,"+"+gain);
+      Game.matchedCount++;
+      Game.first=Game.second=null;
+      Game.busy=false;
+      updateHUD();
+      checkWin();
+    },420);
+  }else{
+    // 不匹配,短暂展示后翻回
+    Audio_.miss();
+    setTimeout(()=>{
+      flipCard(Game.first,false);
+      flipCard(Game.second,false);
+      Game.first=Game.second=null;
+      Game.busy=false;
+    },820);
+  }
+}
+
+function flipCard(obj,show){
+  if(show) obj.el.classList.add("flip");
+  else obj.el.classList.remove("flip");
+}
+
+function popScore(el,txt){
+  const r=el.getBoundingClientRect();
+  const p=document.createElement("div");
+  p.className="popscore";
+  p.textContent=txt;
+  p.style.left=(r.left+r.width/2)+"px";
+  p.style.top=(r.top+r.height/2)+"px";
+  document.body.appendChild(p);
+  setTimeout(()=>p.remove(),820);
+}
+
+function checkWin(){
+  if(Game.matchedCount>=Game.totalPairs){
+    Game.running=false;
+    // 时间加成
+    const timeBonus=Math.max(0,Math.round((60-Game.elapsed)*5));
+    Game.score+=timeBonus;
+    if(Game.score>best){
+      best=Game.score;
+      localStorage.setItem("neonCardsBest",best);
+    }
+    updateHUD();
+    Audio_.win();
+    setTimeout(showEnd,650);
+  }
+}
+
+/* ============================================================
+   HUD / 计时
+   ============================================================ */
+function updateHUD(){
+  lvlVal.textContent=Game.level;
+  scoreVal.textContent=Game.score;
+  stepVal.textContent=Game.steps;
+  bestVal.textContent=best;
+}
+function tickTime(now){
+  if(Game.running){
+    Game.elapsed=(now-Game.startTime)/1000;
+    timeVal.textContent=Game.elapsed.toFixed(1);
+  }
+}
+
+/* ============================================================
+   结束遮罩
+   ============================================================ */
+function showEnd(){
+  endTitle.textContent = "LEVEL "+Game.level+" 通关!";
+  endStats.innerHTML=
+    `用时 <span>${Game.elapsed.toFixed(1)}s</span> · 步数 <span>${Game.steps}</span><br>`+
+    `得分 <span>${Game.score}</span> · 最高 <span>${best}</span>`;
+  endOverlay.classList.remove("hide");
+  // demo 模式自动进入下一关
+  if(DEMO){
+    setTimeout(()=>{ startNextLevel(); }, 1600);
+  }
+}
+
+/* ============================================================
+   流程控制
+   ============================================================ */
+function startGame(){
+  Audio_.init();
+  Audio_.resume();
+  Audio_.startMusic();
+  Game.level=1; Game.score=0;
+  startOverlay.classList.add("hide");
+  beginLevel();
+}
+function startNextLevel(){
+  // 通关后推进关卡;到顶后循环并保留分数累计
+  Game.level++;
+  if(Game.level>Game.layouts.length){
+    if(DEMO){ Game.level=1; } // demo 持续重开
+    else { Game.level=Game.layouts.length; }
+  }
+  endOverlay.classList.add("hide");
+  beginLevel();
+}
+function beginLevel(){
+  Game.steps=0; Game.elapsed=0; cursor=0;
+  buildLevel();
+  Game.running=true;
+  Game.startTime=performance.now();
+  updateHUD();
+  if(DEMO) scheduleAIMove(900);
+}
+
+/* ============================================================
+   主循环:rAF + delta time(更新计时/键盘高亮)
+   ============================================================ */
+let lastT=performance.now();
+function loop(now){
+  const dt=(now-lastT)/1000; lastT=now;
+  try{ update(now,dt); }catch(e){ console.warn("update err",e); }
+  try{ draw(now,dt); }catch(e){ console.warn("draw err",e); }
+  requestAnimationFrame(loop);
+}
+function update(now,dt){ tickTime(now); }
+function draw(now,dt){ /* DOM 渲染由 CSS 处理,这里仅留扩展位 */ }
+requestAnimationFrame(loop);
+
+/* ============================================================
+   键盘控制(方向键移动光标,回车/空格翻牌)
+   ============================================================ */
+let cursor=0;
+function highlightCursor(){
+  Game.cards.forEach((c,i)=>{
+    c.el.style.outline = (i===cursor && !c.matched)
+      ? "3px solid var(--green)" : "none";
+    if(i===cursor) c.el.style.outlineOffset="2px";
+  });
+}
+window.addEventListener("keydown",e=>{
+  if(!Game.running) {
+    if(e.key==="Enter"||e.key===" "){
+      if(!startOverlay.classList.contains("hide")) startGame();
+      else if(!endOverlay.classList.contains("hide")) startNextLevel();
+    }
+    return;
+  }
+  const layoutIdx=Math.min(Game.level-1,Game.layouts.length-1);
+  const cols=Game.layouts[layoutIdx][0];
+  if(e.key==="ArrowRight"){cursor=(cursor+1)%Game.cards.length;}
+  else if(e.key==="ArrowLeft"){cursor=(cursor-1+Game.cards.length)%Game.cards.length;}
+  else if(e.key==="ArrowDown"){cursor=(cursor+cols)%Game.cards.length;}
+  else if(e.key==="ArrowUp"){cursor=(cursor-cols+Game.cards.length)%Game.cards.length;}
+  else if(e.key==="Enter"||e.key===" "){
+    if(cursor>=Game.cards.length) cursor=0;   // 关卡缩小后光标越界则归位
+    onCardClick(Game.cards[cursor]); e.preventDefault(); return;
+  }
+  else return;
+  highlightCursor();
+  e.preventDefault();
+});
+
+/* ============================================================
+   AI 自动演示("打得不错"的记忆 AI)
+   - 记忆翻看过的牌面位置(memory: symbol -> [idx...])
+   - 优先翻出已知配对;否则探索一张新牌,
+     翻开后若与已知牌匹配则立即点匹配,否则继续探索
+   ============================================================ */
+const AImem = new Map();     // symbol -> Set(idx)
+let aiTimer=null;
+
+function aiRemember(obj){
+  if(!AImem.has(obj.symbol)) AImem.set(obj.symbol,new Set());
+  AImem.get(obj.symbol).add(obj.idx);
+}
+function aiFindKnownPair(){
+  for(const [sym,set] of AImem){
+    const avail=[...set].filter(i=>!Game.cards[i].matched);
+    if(avail.length>=2) return [avail[0],avail[1]];
+  }
+  return null;
+}
+function aiUnknownIndex(){
+  // 未被记忆、未配对的牌
+  const known=new Set();
+  AImem.forEach(set=>set.forEach(i=>known.add(i)));
+  const cand=Game.cards.filter(c=>!c.matched && !known.has(c.idx));
+  if(cand.length) return cand[Math.floor(Math.random()*cand.length)].idx;
+  // 全部已知(理论上应能全配对),退而求其次任取未配对
+  const rest=Game.cards.filter(c=>!c.matched);
+  return rest.length? rest[Math.floor(Math.random()*rest.length)].idx : -1;
+}
+
+function scheduleAIMove(delay=700){
+  if(!DEMO) return;
+  clearTimeout(aiTimer);
+  aiTimer=setTimeout(aiStep, delay);
+}
+
+function aiStep(){
+ try{
+  if(!DEMO) return;
+  if(!Game.running){ return; }           // 通关后由 showEnd 重开
+  if(Game.busy){ scheduleAIMove(300); return; }
+
+  // 情况 A:已有第一张翻开,补第二张
+  if(Game.first){
+    const sym=Game.first.symbol;
+    // 找记忆中同符号的另一张
+    let target=-1;
+    if(AImem.has(sym)){
+      const cands=[...AImem.get(sym)].filter(i=>!Game.cards[i].matched && i!==Game.first.idx);
+      if(cands.length) target=cands[0];
+    }
+    if(target<0){
+      // 不知道配对,探索一张新牌
+      target=aiUnknownIndex();
+      if(target===Game.first.idx) target=-1;
+    }
+    if(target<0){
+      // 兜底:任取一张未配对且非首张的牌,确保本轮一定能收尾,避免卡死
+      const rest=Game.cards.filter(c=>!c.matched && c.idx!==Game.first.idx);
+      if(rest.length) target=rest[0].idx;
+    }
+    if(target>=0){
+      const obj=Game.cards[target];
+      aiRemember(obj);
+      onCardClick(obj);
+    }
+    scheduleAIMove(820);
+    return;
+  }
+
+  // 情况 B:开局新一轮 —— 优先已知配对
+  const pair=aiFindKnownPair();
+  if(pair){
+    const a=Game.cards[pair[0]];
+    aiRemember(a);
+    onCardClick(a);
+    // 第二张稍后由情况 A 触发,但这里直接安排更稳
+    scheduleAIMove(560);
+    return;
+  }
+
+  // 否则探索一张新牌
+  const idx=aiUnknownIndex();
+  if(idx>=0){
+    const obj=Game.cards[idx];
+    aiRemember(obj);
+    onCardClick(obj);
+  }
+  scheduleAIMove(620);
+ }catch(e){ console.warn("ai err",e); scheduleAIMove(700); }  // 异常不致中断演示循环
+}
+
+/* 每当关卡重建,清空 AI 记忆 */
+const _buildLevel=buildLevel;
+buildLevel=function(){ AImem.clear(); _buildLevel(); };
+
+/* ============================================================
+   事件绑定
+   ============================================================ */
+$("startBtn").addEventListener("click",()=>{Audio_.init();Audio_.resume();Audio_.click();startGame();});
+$("nextBtn").addEventListener("click",()=>{Audio_.click();startNextLevel();});
+muteBtn.addEventListener("click",()=>{Audio_.init();Audio_.toggleMute();});
+
+// resize 自适应:重新计算棋盘尺寸
+let resizeT=null;
+window.addEventListener("resize",()=>{
+  clearTimeout(resizeT);
+  resizeT=setTimeout(()=>{
+    if(Game.cards.length){
+      const layoutIdx=Math.min(Game.level-1,Game.layouts.length-1);
+      const [cols,rows]=Game.layouts[layoutIdx];
+      sizeBoard(cols,rows);
+    }
+  },120);
+});
+
+/* ============================================================
+   DEMO / RECORD 模式:免手势自动开局 + AI 自动游玩
+   ============================================================ */
+const params=new URLSearchParams(location.search);
+const DEMO = params.has("demo")||params.has("record");
+if(DEMO){
+  demoTag.classList.add("on");
+  // 免手势:自动初始化音频(部分浏览器仍需手势,失败则静默)
+  window.addEventListener("load",()=>{
+    setTimeout(()=>{
+      Audio_.init();
+      Audio_.resume();
+      Audio_.startMusic();
+      startGame();
+    },600);
+  });
+}
+</script>
+</body>
+</html>

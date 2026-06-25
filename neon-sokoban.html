@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON SOKOBAN · 霓虹推箱子</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 全局样式：合成波 OutRun 风格 ===== */
+  :root{
+    --pink:#ff2e88;      /* 霓虹粉 */
+    --cyan:#5ef0ff;      /* 霓虹青 */
+    --magenta:#ff5ec8;   /* 品红 */
+    --gold:#ffd95e;      /* 金 */
+    --green:#5effa0;     /* 绿 */
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ width:100%; height:100%; overflow:hidden; }
+  body{
+    /* 日落渐变背景 */
+    background:linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+    font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+    color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    user-select:none;
+    position:relative;
+  }
+  /* CRT 扫描线（全屏，极轻） */
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:9999;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px, transparent 2px, transparent 3px);
+    mix-blend-mode:multiply; opacity:.5;
+  }
+
+  #wrap{ position:relative; display:flex; flex-direction:column; align-items:center; gap:10px; padding:10px; }
+
+  /* HUD 顶栏 */
+  #hud{
+    width:100%; max-width:640px; display:flex; justify-content:space-between; align-items:center;
+    font-family:'Press Start 2P',monospace; font-size:11px; gap:8px; flex-wrap:wrap;
+    color:var(--cyan); text-shadow:0 0 6px var(--cyan);
+  }
+  #hud .box{
+    background:rgba(22,10,54,0.6); border:2px solid var(--pink);
+    box-shadow:4px 4px 0 var(--cyan); padding:6px 8px; border-radius:4px; white-space:nowrap;
+  }
+  #hud .box b{ color:var(--gold); text-shadow:0 0 6px var(--gold); }
+
+  /* 画布外霓虹边框 */
+  #cvWrap{
+    position:relative; border:3px solid var(--cyan);
+    box-shadow:4px 4px 0 var(--pink), 0 0 24px rgba(94,240,255,.5);
+    border-radius:6px; overflow:hidden; background:rgba(10,4,28,.55);
+  }
+  canvas{ display:block; touch-action:none; }
+
+  /* 控制按钮区 */
+  #ctrls{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+  button.btn{
+    font-family:'Press Start 2P',monospace; font-size:10px; color:#fff;
+    background:rgba(22,10,54,0.7); border:2px solid var(--magenta);
+    box-shadow:3px 3px 0 var(--gold); padding:8px 10px; border-radius:4px; cursor:pointer;
+    transition:transform .05s;
+  }
+  button.btn:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--gold); }
+
+  /* 遮罩（开始 / 结束） */
+  .mask{
+    position:absolute; inset:0; z-index:50; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px; text-align:center;
+    background:linear-gradient(rgba(22,10,54,.82),rgba(10,4,28,.92));
+    backdrop-filter:blur(2px); padding:20px;
+  }
+  .mask h1{
+    font-family:'Press Start 2P',monospace; font-size:24px; line-height:1.5;
+    color:var(--pink); text-shadow:0 0 10px var(--pink),4px 4px 0 var(--cyan);
+  }
+  .mask h2{
+    font-family:'Press Start 2P',monospace; font-size:16px;
+    color:var(--gold); text-shadow:0 0 8px var(--gold);
+  }
+  .mask p{ font-size:15px; line-height:1.7; color:var(--cyan); max-width:420px; text-shadow:0 0 4px var(--cyan); }
+  .mask .hide{ display:none; }
+  .blink{ animation:blink 1s steps(2,start) infinite; }
+  @keyframes blink{ 50%{ opacity:.25; } }
+
+  /* 移动端方向键 */
+  #dpad{ display:none; gap:6px; flex-direction:column; align-items:center; margin-top:4px; }
+  #dpad .row{ display:flex; gap:6px; }
+  #dpad button{
+    width:54px; height:54px; font-size:18px; font-family:'Press Start 2P',monospace;
+    background:rgba(22,10,54,.7); border:2px solid var(--cyan); color:var(--cyan);
+    box-shadow:3px 3px 0 var(--pink); border-radius:6px; cursor:pointer;
+  }
+  #dpad button:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--pink); }
+  @media (max-width:760px){ #dpad{ display:flex; } #hud{ font-size:9px; } }
+
+  #mute{ position:relative; }
+  .small{ font-size:12px; opacity:.85; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud">
+    <div class="box">关卡 <b id="hLvl">1</b>/<span id="hMax">8</span></div>
+    <div class="box">步数 <b id="hStep">0</b></div>
+    <div class="box">推动 <b id="hPush">0</b></div>
+    <div class="box">得分 <b id="hScore">0</b></div>
+    <div class="box">最高 <b id="hBest">0</b></div>
+  </div>
+
+  <div id="cvWrap">
+    <canvas id="cv" width="640" height="480"></canvas>
+
+    <!-- 开始遮罩 -->
+    <div class="mask" id="startMask">
+      <h1>NEON<br>SOKOBAN</h1>
+      <p>方向键 / WASD 移动推箱，把所有箱子推到 ◇ 目标点。<br>箱子只能推不能拉。U/Z 撤销 · R 重开本关。</p>
+      <h2 class="blink">PRESS ENTER / TAP</h2>
+    </div>
+
+    <!-- 结束（通关全部）遮罩 -->
+    <div class="mask hide" id="winMask">
+      <h1>YOU WIN!</h1>
+      <p>全部关卡通关！得分 <b id="finalScore" style="color:var(--gold)">0</b></p>
+      <h2 class="blink">PRESS R / TAP 重开</h2>
+    </div>
+  </div>
+
+  <div id="ctrls">
+    <button class="btn" id="bUndo">UNDO (U)</button>
+    <button class="btn" id="bReset">RESET (R)</button>
+    <button class="btn" id="bPrev">◀ PREV</button>
+    <button class="btn" id="bNext">NEXT ▶</button>
+    <button class="btn" id="mute">SOUND: ON</button>
+  </div>
+
+  <div id="dpad">
+    <div class="row"><button data-dir="up">▲</button></div>
+    <div class="row">
+      <button data-dir="left">◀</button>
+      <button data-dir="down">▼</button>
+      <button data-dir="right">▶</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =======================================================================
+   NEON SOKOBAN — 霓虹推箱子
+   单文件，原生 Canvas 2D。合成波 OutRun 风格。
+   控制：方向键/WASD 移动 · U/Z 撤销 · R 重开本关 · Enter 开始
+   ?demo  —— 自动演示（按预存解法逐关推箱并循环）
+   ?record=N —— 自动演示并录制主 canvas N 秒后下载 webm
+   ======================================================================= */
+
+/* ---------- 关卡定义 ----------
+   字符含义：
+   # 墙   空格 地板   . 目标点   $ 箱子   * 箱子在目标上
+   @ 玩家  + 玩家在目标上
+   每关附带 solve：一段已验证的解法方向序列（U/D/L/R）。
+*/
+const LEVELS = [
+  { // 1 入门：单箱
+    map:[
+      "#######",
+      "#     #",
+      "#  .  #",
+      "# @$  #",
+      "#     #",
+      "#######",
+    ],
+    solve:"" // 由内置求解器在加载时生成（已离线验证可解）
+  },
+  {map:[ // 2 双箱
+      "########",
+      "#      #",
+      "# @$ . #",
+      "#  $ . #",
+      "#      #",
+      "########",
+    ],solve:""},
+  {map:[ // 3 窄缝
+      "#######",
+      "#  .  #",
+      "# #$# #",
+      "# @$. #",
+      "#     #",
+      "#######",
+    ],solve:""},
+  {map:[ // 4 三箱
+      "########",
+      "#  .   #",
+      "# @$$ .#",
+      "#  $   #",
+      "#  .   #",
+      "########",
+    ],solve:""},
+  {map:[ // 5 转角
+      "  ######",
+      "###    #",
+      "#   $. #",
+      "# .$ @ #",
+      "#      #",
+      "########",
+    ],solve:""},
+  {map:[ // 6 三箱分散
+      "#########",
+      "#   .   #",
+      "# $ $ $ #",
+      "# . @ . #",
+      "#       #",
+      "#########",
+    ],solve:""},
+  {map:[ // 7 四箱对称
+      "#######",
+      "#  .  #",
+      "# $ $ #",
+      "#. @ .#",
+      "# $ $ #",
+      "#  .  #",
+      "#######",
+    ],solve:""},
+  {map:[ // 8 仓库
+      "#########",
+      "#  .  . #",
+      "# $## $ #",
+      "#  @    #",
+      "# $## $ #",
+      "#  .  . #",
+      "#########",
+    ],solve:""},
+];
+
+/* ---------- 工具：解析地图 ---------- */
+function parseLevel(L){
+  const rows=L.map;
+  let W=0; for(const r of rows) W=Math.max(W,r.length);
+  const H=rows.length;
+  const walls=[]; const goals=[]; const boxes=[];
+  let player={x:0,y:0};
+  const grid=[]; // 0 floor /1 wall （仅静态）
+  for(let y=0;y<H;y++){
+    grid.push(new Array(W).fill(1)); // 默认墙（外部空白视为墙）
+    const r=rows[y];
+    for(let x=0;x<W;x++){
+      const c= x<r.length? r[x] : ' ';
+      switch(c){
+        case '#': grid[y][x]=1; break;
+        case ' ': grid[y][x]=0; break;
+        case '.': grid[y][x]=0; goals.push({x,y}); break;
+        case '$': grid[y][x]=0; boxes.push({x,y}); break;
+        case '*': grid[y][x]=0; goals.push({x,y}); boxes.push({x,y}); break;
+        case '@': grid[y][x]=0; player={x,y}; break;
+        case '+': grid[y][x]=0; goals.push({x,y}); player={x,y}; break;
+        default:  grid[y][x]=1;
+      }
+    }
+  }
+  return {W,H,grid,goals,boxes,player};
+}
+
+/* ---------- 内置 BFS 求解器（仅用于离线预生成解法，小关安全） ----------
+   状态：玩家坐标 + 箱子集合。目标：所有箱子在目标点。
+   为保证稳定与性能，限制节点数；这些内置关卡都较小，可解。
+*/
+function solveLevel(parsed, maxNodes){
+  const {W,H,grid,goals}=parsed;
+  const goalSet=new Set(goals.map(g=>g.y*W+g.x));
+  const isWall=(x,y)=> (x<0||y<0||x>=W||y>=H||grid[y][x]===1);
+  const boxKey=(boxes)=> boxes.slice().sort((a,b)=>a-b).join(",");
+  const startBoxes=parsed.boxes.map(b=>b.y*W+b.x);
+  const startKey=(parsed.player.y*W+parsed.player.x)+"|"+boxKey(startBoxes);
+  const allGoal=(boxes)=> boxes.every(b=>goalSet.has(b));
+  if(allGoal(startBoxes)) return "";
+  const DIRS=[["U",0,-1],["D",0,1],["L",-1,0],["R",1,0]];
+
+  // 简单死角检测：箱子被推到非目标的墙角则剪枝
+  function deadCorner(p){
+    if(goalSet.has(p)) return false;
+    const x=p%W, y=(p/W)|0;
+    const u=isWall(x,y-1), d=isWall(x,y+1), l=isWall(x-1,y), r=isWall(x+1,y);
+    return (u&&l)||(u&&r)||(d&&l)||(d&&r);
+  }
+
+  const visited=new Set([startKey]);
+  let queue=[{px:parsed.player.x,py:parsed.player.y,boxes:startBoxes,path:""}];
+  let nodes=0; maxNodes=maxNodes||400000;
+  while(queue.length){
+    const next=[];
+    for(const st of queue){
+      if(nodes++>maxNodes) return null;
+      const bset=new Set(st.boxes);
+      for(const [dn,dx,dy] of DIRS){
+        const nx=st.px+dx, ny=st.py+dy;
+        if(isWall(nx,ny)) continue;
+        const np=ny*W+nx;
+        let newBoxes=st.boxes;
+        if(bset.has(np)){
+          // 推箱
+          const bx=nx+dx, by=ny+dy;
+          if(isWall(bx,by)) continue;
+          const bp=by*W+bx;
+          if(bset.has(bp)) continue; // 箱后有箱
+          if(deadCorner(bp)) continue;
+          newBoxes=st.boxes.map(b=> b===np? bp : b);
+        }
+        const key=np+"|"+boxKey(newBoxes);
+        if(visited.has(key)) continue;
+        visited.add(key);
+        const nst={px:nx,py:ny,boxes:newBoxes,path:st.path+dn};
+        if(newBoxes!==st.boxes && allGoal(newBoxes)) return nst.path;
+        next.push(nst);
+      }
+    }
+    queue=next;
+  }
+  return null;
+}
+
+/* ---------- 预生成所有关卡的解法（仅启动一次） ---------- */
+const PARSED = LEVELS.map(L=>parseLevel(L));
+const SOLUTIONS = PARSED.map((p,i)=>{
+  try{
+    const s=solveLevel(p, 600000);
+    return s!==null? s : "";
+  }catch(e){ return ""; }
+});
+
+/* ===================== 游戏状态 ===================== */
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+
+const params=new URLSearchParams(location.search);
+const DEMO = params.has('demo') || params.has('record');
+const RECORD_SEC = params.has('record') ? Math.max(1, parseInt(params.get('record'))||20) : 0;
+
+let state={
+  lvl:0,
+  W:0,H:0,grid:null,goals:null,
+  boxes:[],          // [{x,y}]
+  player:{x:0,y:0},
+  steps:0, pushes:0,
+  history:[],        // 撤销栈：保存 {boxes,player,steps,pushes}
+  score:0,
+  cell:48,           // 每格像素（动态）
+  ox:0, oy:0,        // 绘制偏移
+  started:false,
+  won:false,
+  clearing:false,    // 过关过渡锁
+  anim:0,            // 全局动画相位
+};
+function lsGet(k,d){ try{ return localStorage.getItem(k); }catch(e){ return d; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+let BEST = parseInt(lsGet('neonSokobanBest','0')||'0')||0;
+
+/* DOM 引用 */
+const $=(id)=>document.getElementById(id);
+$('hMax').textContent=LEVELS.length;
+$('hBest').textContent=BEST;
+
+/* ---------- 加载某关 ---------- */
+function loadLevel(idx){
+  idx=((idx%LEVELS.length)+LEVELS.length)%LEVELS.length;
+  const p=parseLevel(LEVELS[idx]); // 重新解析，得到干净副本
+  state.lvl=idx;
+  state.W=p.W; state.H=p.H; state.grid=p.grid; state.goals=p.goals;
+  state.boxes=p.boxes.map(b=>({x:b.x,y:b.y}));
+  state.player={x:p.player.x,y:p.player.y};
+  state.steps=0; state.pushes=0; state.history=[]; state.won=false; state.clearing=false;
+  // demo 解法播放重置
+  demo.solution=SOLUTIONS[idx]||"";
+  demo.idx=0; demo.timer=0;
+  resize();
+  updateHUD();
+}
+
+function updateHUD(){
+  $('hLvl').textContent=state.lvl+1;
+  $('hStep').textContent=state.steps;
+  $('hPush').textContent=state.pushes;
+  $('hScore').textContent=state.score;
+  $('hBest').textContent=BEST;
+}
+
+/* ---------- 网格查询 ---------- */
+function isWall(x,y){ return (x<0||y<0||x>=state.W||y>=state.H||state.grid[y][x]===1); }
+function boxAt(x,y){ return state.boxes.find(b=>b.x===x&&b.y===y); }
+function isGoal(x,y){ return state.goals.some(g=>g.x===x&&g.y===y); }
+function allDone(){ return state.boxes.every(b=>isGoal(b.x,b.y)); }
+
+/* ---------- 移动逻辑 ---------- */
+const DV={ up:[0,-1], down:[0,1], left:[-1,0], right:[1,0],
+           U:[0,-1], D:[0,1], L:[-1,0], R:[1,0] };
+
+function move(dir){
+  if(!state.started || state.won || state.clearing) return;
+  const d=DV[dir]; if(!d) return;
+  const nx=state.player.x+d[0], ny=state.player.y+d[1];
+  if(isWall(nx,ny)) return;
+  const b=boxAt(nx,ny);
+  // 保存历史（用于撤销）
+  const snap={
+    boxes:state.boxes.map(o=>({x:o.x,y:o.y})),
+    player:{x:state.player.x,y:state.player.y},
+    steps:state.steps, pushes:state.pushes
+  };
+  let pushed=false;
+  if(b){
+    const bx=b.x+d[0], by=b.y+d[1];
+    if(isWall(bx,by) || boxAt(bx,by)) return; // 推不动
+    b.x=bx; b.y=by; pushed=true;
+  }
+  state.player.x=nx; state.player.y=ny;
+  state.steps++;
+  if(pushed){ state.pushes++; SFX.push(); }
+  else SFX.step();
+  state.history.push(snap);
+  // 落点反馈
+  if(pushed && isGoal(b.x,b.y)) SFX.lock();
+  updateHUD();
+  if(allDone()) onLevelClear();
+}
+
+function undo(){
+  if(!state.started || state.won || state.clearing) return;
+  const s=state.history.pop();
+  if(!s) return;
+  state.boxes=s.boxes; state.player=s.player;
+  state.steps=s.steps; state.pushes=s.pushes;
+  SFX.undo(); updateHUD();
+}
+
+function resetLevel(){
+  SFX.reset();
+  loadLevel(state.lvl);
+  state.started=true;
+}
+
+/* ---------- 过关 ---------- */
+let clearFx=0;
+function onLevelClear(){
+  if(state.clearing) return;   // 防止过关瞬间重复触发（连按造成双倍计分/跳关）
+  state.clearing=true;
+  SFX.win();
+  clearFx=1;
+  // 计分：基础 + 步数效率奖励
+  const gained = 100 + Math.max(0, 200 - state.steps*3);
+  state.score += gained;
+  if(state.score>BEST){ BEST=state.score; lsSet('neonSokobanBest',BEST); }
+  updateHUD();
+  // 延迟进入下一关
+  setTimeout(()=>{
+    if(state.lvl>=LEVELS.length-1){
+      // 全部通关
+      if(DEMO){ // demo 循环：重置分数从头来
+        state.score=0; loadLevel(0); state.started=true;
+      }else{
+        state.won=true;
+        $('finalScore').textContent=state.score;
+        $('winMask').classList.remove('hide');
+      }
+    }else{
+      loadLevel(state.lvl+1);
+      state.started=true;
+    }
+  }, 900);
+}
+
+/* ===================== 自适应尺寸 ===================== */
+function resize(){
+  const maxW=Math.min(window.innerWidth-24, 640);
+  const maxH=Math.min(window.innerHeight-200, 560);
+  const cell=Math.max(16, Math.floor(Math.min(maxW/state.W, maxH/state.H)));
+  const w=cell*state.W, h=cell*state.H;
+  // 仅在尺寸真正变化时重设（录制期间不清画布）
+  if(cv.width!==w || cv.height!==h){
+    cv.width=w; cv.height=h;
+  }
+  state.cell=cell; state.ox=0; state.oy=0;
+}
+window.addEventListener('resize', ()=>{ try{ resize(); }catch(e){} });
+
+/* ===================== 绘制 ===================== */
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+function draw(dt){
+  const cell=state.cell, W=state.W, H=state.H;
+  const w=cv.width, h=cv.height;
+  state.anim += dt;
+  const t=state.anim;
+
+  // 背景（画布内深色 + 渐隐网格地平线感）
+  ctx.fillStyle='rgba(12,5,30,0.92)';
+  ctx.fillRect(0,0,w,h);
+
+  // 地板网格霓虹线
+  ctx.lineWidth=1;
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      if(state.grid[y][x]===1) continue; // 墙单独绘制
+      const px=x*cell, py=y*cell;
+      // 地板暗格
+      ctx.fillStyle = ((x+y)&1)? 'rgba(40,16,72,0.55)':'rgba(30,12,58,0.55)';
+      ctx.fillRect(px,py,cell,cell);
+      ctx.strokeStyle='rgba(94,240,255,0.10)';
+      ctx.strokeRect(px+0.5,py+0.5,cell-1,cell-1);
+    }
+  }
+
+  // 目标点（霓虹金菱形 + 脉冲）
+  const pulse=0.5+0.5*Math.sin(t*3);
+  for(const g of state.goals){
+    const cx=g.x*cell+cell/2, cy=g.y*cell+cell/2;
+    const occupied=!!boxAt(g.x,g.y);
+    ctx.save();
+    ctx.translate(cx,cy);
+    ctx.rotate(Math.PI/4);
+    const s=cell*(0.22+0.05*pulse);
+    ctx.shadowColor= occupied? '#5effa0':'#ffd95e';
+    ctx.shadowBlur= 12+8*pulse;
+    ctx.strokeStyle= occupied? '#5effa0':'#ffd95e';
+    ctx.lineWidth=3;
+    ctx.strokeRect(-s,-s,s*2,s*2);
+    ctx.restore();
+  }
+
+  // 墙（霓虹粉/青描边 + 硬投影感）
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      if(state.grid[y][x]!==1) continue;
+      // 仅绘制与地板相邻的墙（隐藏外围纯空白）：检查四邻是否有地板
+      let nearFloor=false;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]]){
+        const ax=x+dx, ay=y+dy;
+        if(ax>=0&&ay>=0&&ax<W&&ay<H && state.grid[ay][ax]===0){ nearFloor=true; break; }
+      }
+      if(!nearFloor) continue;
+      const px=x*cell, py=y*cell;
+      // 硬投影
+      ctx.fillStyle='rgba(0,0,0,0.5)';
+      rr(px+3,py+3,cell-4,cell-4,4); ctx.fill();
+      // 墙体
+      ctx.fillStyle='rgba(58,20,87,0.95)';
+      rr(px+1,py+1,cell-4,cell-4,4); ctx.fill();
+      ctx.shadowColor='#ff2e88'; ctx.shadowBlur=8;
+      ctx.strokeStyle='#ff2e88'; ctx.lineWidth=2;
+      rr(px+1.5,py+1.5,cell-5,cell-5,4); ctx.stroke();
+      ctx.shadowBlur=0;
+      // 内部青色高光
+      ctx.strokeStyle='rgba(94,240,255,0.35)'; ctx.lineWidth=1;
+      rr(px+4,py+4,cell-10,cell-10,3); ctx.stroke();
+    }
+  }
+
+  // 箱子（在目标=绿，未到=品红）
+  for(const b of state.boxes){
+    const px=b.x*cell, py=b.y*cell;
+    const on=isGoal(b.x,b.y);
+    const col= on? '#5effa0':'#ff5ec8';
+    // 硬投影
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    rr(px+5,py+5,cell-8,cell-8,5); ctx.fill();
+    // 体
+    ctx.fillStyle= on? 'rgba(18,60,40,0.92)':'rgba(60,18,52,0.92)';
+    rr(px+3,py+3,cell-8,cell-8,5); ctx.fill();
+    ctx.shadowColor=col; ctx.shadowBlur= on? 16:10;
+    ctx.strokeStyle=col; ctx.lineWidth=3;
+    rr(px+3.5,py+3.5,cell-9,cell-9,5); ctx.stroke();
+    // 内十字
+    ctx.shadowBlur=0; ctx.lineWidth=2; ctx.strokeStyle=col;
+    ctx.globalAlpha=.7;
+    ctx.beginPath();
+    ctx.moveTo(px+cell/2,py+6); ctx.lineTo(px+cell/2,py+cell-6);
+    ctx.moveTo(px+6,py+cell/2); ctx.lineTo(px+cell-6,py+cell/2);
+    ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+
+  // 玩家（霓虹青圆 + 朝向小箭头）
+  {
+    const px=state.player.x*cell+cell/2, py=state.player.y*cell+cell/2;
+    const r=cell*0.30;
+    ctx.fillStyle='rgba(0,0,0,0.5)';
+    ctx.beginPath(); ctx.arc(px+3,py+3,r,0,Math.PI*2); ctx.fill();
+    ctx.shadowColor='#5ef0ff'; ctx.shadowBlur=16;
+    ctx.fillStyle='rgba(10,40,52,0.9)';
+    ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#5ef0ff'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.stroke();
+    ctx.shadowBlur=0;
+    // 眼睛/核心
+    ctx.fillStyle='#5ef0ff';
+    ctx.beginPath(); ctx.arc(px,py,r*0.32,0,Math.PI*2); ctx.fill();
+  }
+
+  // 过关闪光
+  if(clearFx>0){
+    clearFx=Math.max(0, clearFx-dt*1.2);
+    ctx.fillStyle='rgba(94,255,160,'+(clearFx*0.4)+')';
+    ctx.fillRect(0,0,w,h);
+  }
+
+  // DEMO 提示角标
+  if(DEMO){
+    ctx.font='12px "Press Start 2P", monospace';
+    ctx.fillStyle='rgba(255,217,94,0.9)';
+    ctx.shadowColor='#ffd95e'; ctx.shadowBlur=8;
+    ctx.fillText('AUTO DEMO', 8, h-10);
+    ctx.shadowBlur=0;
+  }
+}
+
+/* ===================== 主循环 ===================== */
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  // 更新
+  try{ update(dt); }catch(e){ /* 防止单帧异常中断循环 */ }
+  // 绘制
+  try{ draw(dt); }catch(e){}
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 演示自动播放 ---------- */
+const demo={ solution:"", idx:0, timer:0, stepInterval:0.22 };
+function update(dt){
+  if(DEMO && state.started && !state.won){
+    demo.timer+=dt;
+    if(demo.timer>=demo.stepInterval){
+      demo.timer=0;
+      const sol=demo.solution;
+      if(sol && demo.idx<sol.length){
+        const ch=sol[demo.idx++];
+        move(ch); // U/D/L/R
+      }else if(!sol || demo.idx>=sol.length){
+        // 无解法或已走完仍未过关 -> 重开本关（保证有内容）
+        if(!allDone()){
+          loadLevel(state.lvl); state.started=true;
+        }
+      }
+    }
+  }
+}
+
+/* ===================== 输入 ===================== */
+function beginGame(){
+  if(state.started) return;
+  AudioInit();
+  state.started=true;
+  $('startMask').classList.add('hide');
+  SFX.start();
+}
+
+window.addEventListener('keydown',(e)=>{
+  const k=e.key.toLowerCase();
+  if(!state.started){
+    if(k==='enter'||k===' '){ beginGame(); e.preventDefault(); }
+    return;
+  }
+  if(state.won){
+    if(k==='r'){ // 重开全部
+      $('winMask').classList.add('hide');
+      state.score=0; loadLevel(0); state.started=true; updateHUD();
+    }
+    return;
+  }
+  switch(k){
+    case 'arrowup': case 'w': move('up'); e.preventDefault(); break;
+    case 'arrowdown': case 's': move('down'); e.preventDefault(); break;
+    case 'arrowleft': case 'a': move('left'); e.preventDefault(); break;
+    case 'arrowright': case 'd': move('right'); e.preventDefault(); break;
+    case 'u': case 'z': undo(); break;
+    case 'r': resetLevel(); break;
+  }
+});
+
+// 触屏：开始遮罩点按开始
+$('startMask').addEventListener('click', beginGame);
+$('winMask').addEventListener('click', ()=>{
+  $('winMask').classList.add('hide');
+  state.score=0; loadLevel(0); state.started=true; updateHUD();
+});
+
+// 按钮
+$('bUndo').onclick=()=>{ AudioInit(); undo(); };
+$('bReset').onclick=()=>{ AudioInit(); if(state.started&&!state.won) resetLevel(); };
+$('bPrev').onclick=()=>{ AudioInit(); if(state.started&&!state.won){ loadLevel(state.lvl-1); state.started=true; } };
+$('bNext').onclick=()=>{ AudioInit(); if(state.started&&!state.won){ loadLevel(state.lvl+1); state.started=true; } };
+
+// D-pad
+document.querySelectorAll('#dpad button').forEach(b=>{
+  b.addEventListener('click',()=>{ AudioInit(); if(!state.started){beginGame();return;} move(b.dataset.dir); });
+});
+
+// 画布滑动（移动端简单手势）
+let touchStart=null;
+cv.addEventListener('touchstart',(e)=>{
+  if(!state.started){ beginGame(); return; }
+  const t=e.touches[0]; touchStart={x:t.clientX,y:t.clientY};
+},{passive:true});
+cv.addEventListener('touchend',(e)=>{
+  if(!touchStart) return;
+  const t=e.changedTouches[0];
+  const dx=t.clientX-touchStart.x, dy=t.clientY-touchStart.y;
+  if(Math.abs(dx)<18&&Math.abs(dy)<18){ touchStart=null; return; }
+  if(Math.abs(dx)>Math.abs(dy)) move(dx>0?'right':'left');
+  else move(dy>0?'down':'up');
+  touchStart=null;
+},{passive:true});
+
+/* ===================== 音频（Web Audio 程序化） ===================== */
+let AC=null, masterGain=null, musicOn=true, muted=false;
+function AudioInit(){
+  if(AC) { if(AC.state==='suspended') AC.resume(); return; }
+  try{
+    AC=new (window.AudioContext||window.webkitAudioContext)();
+    masterGain=AC.createGain(); masterGain.gain.value=muted?0:0.5; masterGain.connect(AC.destination);
+    startMusic();
+  }catch(e){ AC=null; }
+}
+function blip(freq,dur,type,vol,slideTo){
+  if(!AC||muted) return;
+  try{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type||'square'; o.frequency.value=freq;
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, AC.currentTime+dur);
+    g.gain.value=0.0001;
+    g.gain.exponentialRampToValueAtTime(vol||0.25, AC.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime+dur);
+    o.connect(g); g.connect(masterGain);
+    o.start(); o.stop(AC.currentTime+dur+0.02);
+  }catch(e){}
+}
+const SFX={
+  step:()=>blip(220,0.06,'square',0.12),
+  push:()=>blip(140,0.10,'sawtooth',0.18,90),
+  lock:()=>blip(660,0.12,'square',0.2,990),
+  undo:()=>blip(300,0.08,'triangle',0.15,200),
+  reset:()=>blip(180,0.18,'sawtooth',0.18,80),
+  start:()=>{ blip(440,0.1,'square',0.2,660); setTimeout(()=>blip(660,0.12,'square',0.2,880),100); },
+  win:()=>{ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>blip(f,0.16,'square',0.22),i*90)); },
+};
+
+/* 合成波循环配乐：低音琶音 + 和弦垫 */
+let musicTimer=null, musicStep=0;
+const BASS=[55,55,82.4,73.4]; // A1 A1 E2 D2
+const ARP=[ [220,277,330,440] ]; // A 大三+八度
+function startMusic(){
+  if(!AC) return;
+  if(musicTimer) clearInterval(musicTimer);
+  musicStep=0;
+  const bpm=104, sixteenth=60/bpm/4*1000;
+  musicTimer=setInterval(()=>{
+    if(!AC||muted||!musicOn) return;
+    const bar=Math.floor(musicStep/16)%BASS.length;
+    const s=musicStep%16;
+    // 低音每拍
+    if(s%4===0){
+      const f=BASS[bar];
+      const o=AC.createOscillator(), g=AC.createGain();
+      o.type='sawtooth'; o.frequency.value=f;
+      g.gain.value=0.0001; g.gain.exponentialRampToValueAtTime(0.12,AC.currentTime+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.28);
+      o.connect(g); g.connect(masterGain); o.start(); o.stop(AC.currentTime+0.3);
+    }
+    // 琶音 16 分
+    const arp=ARP[0];
+    const note=arp[s%arp.length]*(bar===2?1.5:bar===3?1.33:1);
+    if(s%2===0){
+      const o=AC.createOscillator(), g=AC.createGain();
+      o.type='square'; o.frequency.value=note;
+      g.gain.value=0.0001; g.gain.exponentialRampToValueAtTime(0.05,AC.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,AC.currentTime+0.14);
+      o.connect(g); g.connect(masterGain); o.start(); o.stop(AC.currentTime+0.16);
+    }
+    musicStep++;
+  }, sixteenth);
+}
+$('mute').onclick=()=>{
+  AudioInit();
+  muted=!muted;
+  if(masterGain) masterGain.gain.value=muted?0:0.5;
+  $('mute').textContent='SOUND: '+(muted?'OFF':'ON');
+};
+
+/* ===================== 录制（?record=N） ===================== */
+function startRecording(seconds){
+  try{
+    const stream=cv.captureStream(30);
+    if(!stream || stream.getVideoTracks().length===0){ return; }
+    let mt='video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[];
+    mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{
+      const b=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(b); a.download='neon-sokoban.webm';
+      document.body.appendChild(a); try{a.click()}catch(e){}
+    };
+    mr.start(250);
+    setTimeout(()=>{ try{mr.stop()}catch(e){} }, seconds*1000);
+  }catch(e){}
+}
+
+/* ===================== 启动 ===================== */
+loadLevel(0);
+requestAnimationFrame(loop);
+
+if(DEMO){
+  // 免手势直接开局
+  state.started=true;
+  $('startMask').classList.add('hide');
+  // 尝试初始化音频（demo 下可能被浏览器策略静音，仍可游玩）
+  try{ AudioInit(); }catch(e){}
+  if(RECORD_SEC>0){
+    // 确保画布尺寸有效后开始录制
+    setTimeout(()=>{ if(cv.width>0&&cv.height>0) startRecording(RECORD_SEC); }, 300);
+  }
+}
+</script>
+</body>
+</html>

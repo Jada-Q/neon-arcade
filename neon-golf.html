@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>NEON GOLF — 霓虹迷你高尔夫</title>
+<!-- Google Fonts:像素体 + 界面体 -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ===== 全局重置 ===== */
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #160a36;
+    font-family: 'Chakra Petch', system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #5ef0ff;
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  /* 日落渐变背景层 */
+  #bg {
+    position: fixed; inset: 0; z-index: 0;
+    background: linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+  }
+  /* 主画布 */
+  #game { position: fixed; inset: 0; z-index: 1; display: block; }
+  /* 全屏 CRT 扫描线叠加 */
+  #scan {
+    position: fixed; inset: 0; z-index: 5; pointer-events: none;
+    opacity: .35;
+    background: repeating-linear-gradient(
+      to bottom, rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.55) 3px, rgba(0,0,0,.55) 4px);
+  }
+  /* ===== HUD ===== */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 6;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 12px 14px; pointer-events: none;
+    font-family: 'Press Start 2P', monospace;
+    text-shadow: 0 0 8px currentColor;
+  }
+  .hud-box {
+    background: rgba(22,10,54,.55);
+    border: 2px solid #ff2e88;
+    box-shadow: 4px 4px 0 #5ef0ff;
+    padding: 8px 10px; border-radius: 4px;
+    font-size: 10px; line-height: 1.7; color: #ffd95e;
+  }
+  .hud-box .lbl { color: #5ef0ff; }
+  .hud-right { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+  /* 按钮通用 */
+  .btn {
+    pointer-events: auto; cursor: pointer;
+    font-family: 'Press Start 2P', monospace; font-size: 9px;
+    color: #160a36; background: #5ef0ff;
+    border: 2px solid #fff; box-shadow: 3px 3px 0 #ff2e88;
+    padding: 8px 10px; border-radius: 4px;
+    transition: transform .05s;
+  }
+  .btn:active { transform: translate(3px,3px); box-shadow: 0 0 0 #ff2e88; }
+  .btn.pink { background: #ff2e88; color: #fff; box-shadow: 3px 3px 0 #5ef0ff; }
+  /* ===== 遮罩 ===== */
+  .overlay {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 18px; padding: 24px;
+    background: rgba(11,5,30,.78); backdrop-filter: blur(2px);
+  }
+  .overlay h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(20px, 6vw, 46px); line-height: 1.4;
+    color: #ff2e88; text-shadow: 0 0 14px #ff2e88, 0 0 28px #ff5ec8;
+  }
+  .overlay h2 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(13px, 3.4vw, 22px); color: #ffd95e;
+    text-shadow: 0 0 12px #ffd95e;
+  }
+  .overlay p { font-size: clamp(13px, 2.6vw, 17px); color: #5ef0ff; max-width: 520px; line-height: 1.7; }
+  .overlay .big-btn {
+    font-family: 'Press Start 2P', monospace; font-size: clamp(11px,2.6vw,15px);
+    cursor: pointer; color: #160a36; background: #5effa0;
+    border: 3px solid #fff; box-shadow: 5px 5px 0 #ff2e88;
+    padding: 16px 22px; border-radius: 6px;
+  }
+  .overlay .big-btn:active { transform: translate(4px,4px); box-shadow: 0 0 0 #ff2e88; }
+  .hidden { display: none !important; }
+  .best { color: #ffd95e; text-shadow: 0 0 10px #ffd95e; font-family:'Press Start 2P',monospace; font-size: clamp(10px,2.4vw,14px); }
+</style>
+</head>
+<body>
+  <div id="bg"></div>
+  <canvas id="game"></canvas>
+  <div id="scan"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-box">
+      <div><span class="lbl">HOLE</span> <span id="hHole">1/5</span></div>
+      <div><span class="lbl">PAR</span> <span id="hPar">3</span></div>
+      <div><span class="lbl">SHOTS</span> <span id="hShots">0</span></div>
+      <div><span class="lbl">TOTAL</span> <span id="hTotal">0</span></div>
+    </div>
+    <div class="hud-right">
+      <button id="btnMute" class="btn">🔊 SND</button>
+      <button id="btnReset" class="btn pink">↻ 重开本关</button>
+    </div>
+  </div>
+
+  <!-- 开始遮罩 -->
+  <div id="startMask" class="overlay">
+    <h1>NEON GOLF</h1>
+    <p>俯视霓虹迷你高尔夫。在球上<strong>按住并往反方向拖拽</strong>(像弹弓),拉得越远力度越大,松手击球。把发光球打进发光球洞即可过关。</p>
+    <div class="best" id="bestStart">最佳总杆数: --</div>
+    <button id="btnStart" class="big-btn">▶ 点击开始</button>
+  </div>
+
+  <!-- 通关遮罩 -->
+  <div id="winMask" class="overlay hidden">
+    <h1>全部通关!</h1>
+    <h2 id="winScore">总杆数: 0</h2>
+    <div class="best" id="bestWin">最佳总杆数: --</div>
+    <button id="btnAgain" class="big-btn">▶ 再来一局</button>
+  </div>
+
+<script>
+/* =========================================================
+   NEON GOLF — 原生 Canvas 俯视 2D 迷你高尔夫
+   自写简单物理(摩擦 + 法线反射),无外部物理引擎
+   ========================================================= */
+(() => {
+  'use strict';
+
+  // ---------- 基础引用 ----------
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  const elHole = document.getElementById('hHole');
+  const elPar  = document.getElementById('hPar');
+  const elShots= document.getElementById('hShots');
+  const elTotal= document.getElementById('hTotal');
+  const startMask = document.getElementById('startMask');
+  const winMask   = document.getElementById('winMask');
+  const btnStart  = document.getElementById('btnStart');
+  const btnAgain  = document.getElementById('btnAgain');
+  const btnReset  = document.getElementById('btnReset');
+  const btnMute   = document.getElementById('btnMute');
+  const winScore  = document.getElementById('winScore');
+  const bestStart = document.getElementById('bestStart');
+  const bestWin   = document.getElementById('bestWin');
+
+  // ---------- 设计分辨率(逻辑坐标系) ----------
+  // 关卡用逻辑坐标定义,渲染时整体缩放居中,保证各设备一致
+  const W = 900, H = 1500;       // 逻辑画布(竖向球场)
+  const BALL_R = 16;             // 球半径
+  const HOLE_R = 26;             // 洞半径
+  const FRICTION = 0.992;        // 每帧基础摩擦(60fps基准)
+  const STOP_SPEED = 8;          // 低于该速度(像素/秒)判定停下
+  const SINK_SPEED = 520;        // 进洞要求:速度低于该值才落袋
+  const MAX_POWER = 1500;        // 最大初速度
+  const WALL = 18;               // 墙体厚度(场地边界)
+
+  // 缩放与偏移(canvas像素 <-> 逻辑坐标)
+  let scale = 1, offX = 0, offY = 0;
+
+  // ---------- 关卡定义 ----------
+  // walls: 轴对齐矩形 {x,y,w,h}。ball/hole 为逻辑坐标
+  const LEVELS = [
+    { // 1 — 直线热身
+      par: 2,
+      ball: {x: 450, y: 1300},
+      hole: {x: 450, y: 220},
+      walls: []
+    },
+    { // 2 — 一道中墙
+      par: 3,
+      ball: {x: 220, y: 1300},
+      hole: {x: 680, y: 240},
+      walls: [ {x: 120, y: 720, w: 520, h: 26} ]
+    },
+    { // 3 — Z 形通道
+      par: 4,
+      ball: {x: 200, y: 1320},
+      hole: {x: 700, y: 200},
+      walls: [
+        {x: 0,   y: 980,  w: 620, h: 26},
+        {x: 280, y: 540,  w: 620, h: 26}
+      ]
+    },
+    { // 4 — 中央立柱障碍
+      par: 4,
+      ball: {x: 450, y: 1320},
+      hole: {x: 450, y: 200},
+      walls: [
+        {x: 360, y: 640, w: 180, h: 180},
+        {x: 120, y: 1000, w: 200, h: 26},
+        {x: 580, y: 1000, w: 200, h: 26}
+      ]
+    },
+    { // 5 — 迷宫终关
+      par: 5,
+      ball: {x: 180, y: 1340},
+      hole: {x: 720, y: 200},
+      walls: [
+        {x: 0,   y: 1100, w: 560, h: 26},
+        {x: 340, y: 820,  w: 560, h: 26},
+        {x: 0,   y: 540,  w: 560, h: 26},
+        {x: 340, y: 260,  w: 300, h: 26}
+      ]
+    }
+  ];
+
+  // ---------- 游戏状态 ----------
+  const state = {
+    running: false,
+    levelIdx: 0,
+    shots: 0,
+    total: 0,
+    ball: {x: 0, y: 0, vx: 0, vy: 0, moving: false},
+    aiming: false,
+    aimStart: {x: 0, y: 0},   // 逻辑坐标:按下点(球心)
+    aimCur:   {x: 0, y: 0},   // 逻辑坐标:当前拖拽点
+    walls: [],                 // 当前关全部碰撞矩形(含边界)
+    hole: {x: 0, y: 0},
+    par: 3,
+    particles: [],
+    sinking: false,            // 进洞动画中
+    sinkT: 0,
+    flash: 0                   // 命中闪光计时
+  };
+
+  // ---------- localStorage 最佳总杆数 ----------
+  const BEST_KEY = 'neonGolfBestTotal';
+  function getBest(){ const v = localStorage.getItem(BEST_KEY); return v ? parseInt(v,10) : null; }
+  function setBest(v){ localStorage.setItem(BEST_KEY, String(v)); }
+  function fmtBest(){ const b = getBest(); return b == null ? '最佳总杆数: --' : ('最佳总杆数: ' + b); }
+  function refreshBest(){ bestStart.textContent = fmtBest(); bestWin.textContent = fmtBest(); }
+
+  /* =========================================================
+     音频:Web Audio 程序化音效 + 合成波循环配乐
+     ========================================================= */
+  const Audio = (() => {
+    let actx = null, masterGain = null, musicGain = null, sfxGain = null;
+    let muted = false, musicTimer = null, step = 0;
+    let started = false;
+
+    function ensure(){
+      if (actx) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      actx = new AC();
+      masterGain = actx.createGain(); masterGain.gain.value = 0.9; masterGain.connect(actx.destination);
+      musicGain = actx.createGain(); musicGain.gain.value = 0.18; musicGain.connect(masterGain);
+      sfxGain   = actx.createGain(); sfxGain.gain.value = 0.5; sfxGain.connect(masterGain);
+    }
+    // 单音
+    function tone(freq, dur, type, dest, vol){
+      if (!actx) return;
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || 'sine'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(vol || 0.3, actx.currentTime + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+      o.connect(g); g.connect(dest || sfxGain);
+      o.start(); o.stop(actx.currentTime + dur + 0.02);
+    }
+    // 击球
+    function hit(power){
+      ensure();
+      const f = 180 + power * 320; // 力度越大音越高
+      tone(f, 0.12, 'square', sfxGain, 0.28);
+      tone(f*0.5, 0.18, 'triangle', sfxGain, 0.18);
+    }
+    // 撞墙
+    function bounce(){ ensure(); tone(420, 0.06, 'square', sfxGain, 0.16); }
+    // 进洞:上升琶音
+    function sink(){
+      ensure();
+      const notes = [523, 659, 784, 1047, 1319];
+      notes.forEach((n,i) => setTimeout(() => tone(n, 0.22, 'triangle', sfxGain, 0.3), i*70));
+    }
+    // 通关
+    function win(){
+      ensure();
+      const notes = [523,659,784,1047,1319,1568];
+      notes.forEach((n,i) => setTimeout(() => tone(n, 0.3, 'sawtooth', sfxGain, 0.26), i*110));
+    }
+    // ----- 合成波循环配乐(简单 bass + arp) -----
+    // OutRun 风格小调音阶
+    const BASS = [55, 55, 82.4, 73.4]; // A1 A1 E2 D2
+    const ARP  = [220, 277, 330, 440, 330, 277]; // A min 琶音
+    function tick(){
+      if (!actx || muted) return;
+      const bi = Math.floor(step/4) % BASS.length;
+      // bass
+      if (step % 4 === 0) tone(BASS[bi], 0.42, 'sawtooth', musicGain, 0.5);
+      // arp
+      tone(ARP[step % ARP.length], 0.18, 'square', musicGain, 0.22);
+      step++;
+    }
+    function startMusic(){
+      ensure();
+      if (musicTimer) return;
+      musicTimer = setInterval(tick, 160); // ~ 节奏
+    }
+    function start(){
+      ensure();
+      if (actx.state === 'suspended') actx.resume();
+      started = true;
+      startMusic();
+    }
+    function setMuted(m){
+      muted = m;
+      if (masterGain) masterGain.gain.value = m ? 0 : 0.9;
+    }
+    return { hit, bounce, sink, win, start, setMuted, isStarted: () => started };
+  })();
+
+  /* =========================================================
+     关卡装载
+     ========================================================= */
+  function buildWalls(level){
+    // 场地边界(4 条厚墙)+ 关卡内部墙
+    const b = [
+      {x: 0,     y: 0,      w: W,    h: WALL},        // 上
+      {x: 0,     y: H-WALL, w: W,    h: WALL},        // 下
+      {x: 0,     y: 0,      w: WALL, h: H},           // 左
+      {x: W-WALL,y: 0,      w: WALL, h: H}            // 右
+    ];
+    return b.concat(level.walls.map(w => ({...w})));
+  }
+
+  function loadLevel(idx){
+    const lv = LEVELS[idx];
+    state.levelIdx = idx;
+    state.par = lv.par;
+    state.shots = 0;
+    state.walls = buildWalls(lv);
+    state.hole = {x: lv.hole.x, y: lv.hole.y};
+    state.ball.x = lv.ball.x; state.ball.y = lv.ball.y;
+    state.ball.vx = 0; state.ball.vy = 0; state.ball.moving = false;
+    state.aiming = false;
+    state.particles = [];
+    state.sinking = false; state.sinkT = 0; state.flash = 0;
+    updateHUD();
+  }
+
+  function updateHUD(){
+    elHole.textContent = (state.levelIdx+1) + '/' + LEVELS.length;
+    elPar.textContent = state.par;
+    elShots.textContent = state.shots;
+    elTotal.textContent = state.total;
+  }
+
+  /* =========================================================
+     坐标转换:屏幕像素 -> 逻辑坐标
+     ========================================================= */
+  function resize(){
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssW = window.innerWidth, cssH = window.innerHeight;
+    cv.width = Math.floor(cssW * dpr);
+    cv.height = Math.floor(cssH * dpr);
+    cv.style.width = cssW + 'px';
+    cv.style.height = cssH + 'px';
+    // 计算缩放使逻辑场地居中(留出顶部 HUD 空间用内边距)
+    const padTop = 90 * dpr;   // 给 HUD 让位
+    const padX = 16 * dpr, padBot = 16 * dpr;
+    const availW = cv.width - padX*2;
+    const availH = cv.height - padTop - padBot;
+    scale = Math.min(availW / W, availH / H);
+    offX = (cv.width - W*scale)/2;
+    offY = padTop + (availH - H*scale)/2;
+  }
+
+  function toLogic(clientX, clientY){
+    const rect = cv.getBoundingClientRect();
+    const dpr = cv.width / rect.width;
+    const px = (clientX - rect.left) * dpr;
+    const py = (clientY - rect.top) * dpr;
+    return { x: (px - offX)/scale, y: (py - offY)/scale };
+  }
+
+  /* =========================================================
+     物理:更新球(摩擦 + 墙反射 + 进洞)
+     dt 单位:秒
+     ========================================================= */
+  function updatePhysics(dt){
+    const b = state.ball;
+    if (!b.moving) return;
+
+    // 子步进:速度高时分多步,避免穿墙
+    const speed = Math.hypot(b.vx, b.vy);
+    const steps = Math.max(1, Math.min(8, Math.ceil(speed * dt / (BALL_R*0.7))));
+    const sdt = dt / steps;
+
+    for (let s = 0; s < steps; s++){
+      b.x += b.vx * sdt;
+      b.y += b.vy * sdt;
+
+      // --- 墙体碰撞(圆 vs 轴对齐矩形,反射法线) ---
+      for (const w of state.walls){
+        // 找矩形上离球心最近点
+        const cx = Math.max(w.x, Math.min(b.x, w.x + w.w));
+        const cy = Math.max(w.y, Math.min(b.y, w.y + w.h));
+        let dx = b.x - cx, dy = b.y - cy;
+        let dist = Math.hypot(dx, dy);
+        if (dist < BALL_R){
+          if (dist === 0){
+            // 球心在矩形内:按最小穿透轴推出
+            const left = b.x - w.x, right = (w.x+w.w) - b.x;
+            const top = b.y - w.y, bot = (w.y+w.h) - b.y;
+            const m = Math.min(left,right,top,bot);
+            if (m === left){ dx=-1; dy=0; b.x = w.x - BALL_R; }
+            else if (m === right){ dx=1; dy=0; b.x = w.x+w.w + BALL_R; }
+            else if (m === top){ dx=0; dy=-1; b.y = w.y - BALL_R; }
+            else { dx=0; dy=1; b.y = w.y+w.h + BALL_R; }
+            dist = BALL_R;
+          }
+          const nx = dx/dist, ny = dy/dist;
+          // 推出重叠
+          const overlap = BALL_R - dist;
+          b.x += nx * overlap;
+          b.y += ny * overlap;
+          // 反射速度:v' = v - 2(v·n)n,带能量损耗
+          const vn = b.vx*nx + b.vy*ny;
+          if (vn < 0){
+            b.vx -= 2*vn*nx;
+            b.vy -= 2*vn*ny;
+            b.vx *= 0.82; b.vy *= 0.82; // 反弹损耗
+            if (Math.hypot(b.vx,b.vy) > 40) Audio.bounce();
+          }
+        }
+      }
+
+      // --- 进洞检测 ---
+      const hd = Math.hypot(b.x - state.hole.x, b.y - state.hole.y);
+      const sp = Math.hypot(b.vx, b.vy);
+      if (hd < HOLE_R && sp < SINK_SPEED && !state.sinking){
+        // 球被洞吸入
+        startSink();
+        return;
+      } else if (hd < HOLE_R + BALL_R*0.5 && sp < SINK_SPEED*1.4){
+        // 靠近洞:轻微吸引(增加手感)
+        const ax = (state.hole.x - b.x), ay = (state.hole.y - b.y);
+        const al = Math.hypot(ax,ay) || 1;
+        b.vx += (ax/al) * 600 * sdt;
+        b.vy += (ay/al) * 600 * sdt;
+      }
+    }
+
+    // --- 摩擦减速(按 dt 归一化到 60fps) ---
+    const fr = Math.pow(FRICTION, dt*60);
+    b.vx *= fr; b.vy *= fr;
+
+    // --- 停止判定 ---
+    if (Math.hypot(b.vx, b.vy) < STOP_SPEED){
+      b.vx = 0; b.vy = 0; b.moving = false;
+      // 若停在洞口范围内,直接落袋(避免球卡在洞边永远不进)
+      const hd = Math.hypot(b.x - state.hole.x, b.y - state.hole.y);
+      if (hd < HOLE_R && !state.sinking){
+        startSink();
+      }
+    }
+  }
+
+  // 进洞处理
+  function startSink(){
+    state.sinking = true;
+    state.sinkT = 0;
+    state.ball.moving = false;
+    state.ball.vx = 0; state.ball.vy = 0;
+    state.flash = 1;
+    spawnSinkParticles();
+    Audio.sink();
+  }
+
+  function spawnSinkParticles(){
+    const colors = ['#ff2e88','#5ef0ff','#ffd95e','#5effa0','#ff5ec8'];
+    for (let i=0;i<48;i++){
+      const a = Math.random()*Math.PI*2;
+      const sp = 120 + Math.random()*360;
+      state.particles.push({
+        x: state.hole.x, y: state.hole.y,
+        vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
+        life: 1, col: colors[i % colors.length],
+        r: 2 + Math.random()*4
+      });
+    }
+  }
+
+  function updateParticles(dt){
+    for (let i = state.particles.length-1; i>=0; i--){
+      const p = state.particles[i];
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.vx *= 0.94; p.vy *= 0.94;
+      p.life -= dt*1.4;
+      if (p.life <= 0) state.particles.splice(i,1);
+    }
+  }
+
+  // 进洞动画推进 -> 过关
+  function updateSink(dt){
+    if (!state.sinking) return;
+    state.sinkT += dt;
+    if (state.sinkT > 0.85 && state.particles.length === 0){
+      nextLevel();
+    }
+  }
+
+  function nextLevel(){
+    state.sinking = false;
+    if (state.levelIdx + 1 >= LEVELS.length){
+      // 全部通关
+      finishGame();
+    } else {
+      loadLevel(state.levelIdx + 1);
+    }
+  }
+
+  function finishGame(){
+    state.running = false;
+    winScore.textContent = '总杆数: ' + state.total + '  (越低越好)';
+    // 更新最佳
+    const best = getBest();
+    if (best == null || state.total < best) setBest(state.total);
+    refreshBest();
+    winMask.classList.remove('hidden');
+    Audio.win();
+  }
+
+  /* =========================================================
+     渲染
+     ========================================================= */
+  function logicToScreen(x, y){ return { x: offX + x*scale, y: offY + y*scale }; }
+
+  function draw(time){
+    ctx.clearRect(0,0,cv.width,cv.height);
+
+    // ---- 球场底板(半透明深色,衬托霓虹) ----
+    ctx.save();
+    ctx.translate(offX, offY);
+    ctx.scale(scale, scale);
+
+    // 场地背景
+    ctx.fillStyle = 'rgba(12,6,32,0.55)';
+    roundRect(ctx, 0, 0, W, H, 22); ctx.fill();
+
+    // 场地网格(合成波透视感)
+    drawGrid(time);
+
+    // ---- 墙体:霓虹发光描边 ----
+    for (const w of state.walls){
+      drawNeonRect(w.x, w.y, w.w, w.h, '#5ef0ff', '#ff2e88');
+    }
+
+    // ---- 洞:发光目标环 ----
+    drawHole(time);
+
+    // ---- 进洞粒子 ----
+    for (const p of state.particles){
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.col;
+      ctx.shadowColor = p.col; ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+
+    // ---- 球 ----
+    if (!state.sinking || state.sinkT < 0.4){
+      drawBall(time);
+    }
+
+    // ---- 瞄准线 + 力度指示 ----
+    if (state.aiming){
+      drawAim();
+    }
+
+    ctx.restore();
+
+    // ---- 命中闪光叠加 ----
+    if (state.flash > 0){
+      ctx.fillStyle = 'rgba(255,255,255,' + (state.flash*0.25) + ')';
+      ctx.fillRect(0,0,cv.width,cv.height);
+      state.flash -= 0.04;
+      if (state.flash < 0) state.flash = 0;
+    }
+  }
+
+  function roundRect(c,x,y,w,h,r){
+    c.beginPath();
+    c.moveTo(x+r,y);
+    c.arcTo(x+w,y,x+w,y+h,r);
+    c.arcTo(x+w,y+h,x,y+h,r);
+    c.arcTo(x,y+h,x,y,r);
+    c.arcTo(x,y,x+w,y,r);
+    c.closePath();
+  }
+
+  function drawGrid(time){
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx,0,0,W,H,22); ctx.clip();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(94,240,255,0.10)';
+    const gap = 60;
+    const scroll = (time*0.03) % gap;
+    for (let x = 0; x <= W; x += gap){
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+    }
+    for (let y = -gap + scroll; y <= H; y += gap){
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawNeonRect(x,y,w,h,c1,c2){
+    ctx.save();
+    // 填充(暗)
+    ctx.fillStyle = 'rgba(20,10,40,0.7)';
+    roundRect(ctx,x,y,w,h,6); ctx.fill();
+    // 外发光描边
+    ctx.lineWidth = 4;
+    ctx.shadowColor = c1; ctx.shadowBlur = 18;
+    ctx.strokeStyle = c1;
+    roundRect(ctx,x,y,w,h,6); ctx.stroke();
+    // 内描边对比色
+    ctx.shadowBlur = 6;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = c2;
+    roundRect(ctx,x+3,y+3,Math.max(0,w-6),Math.max(0,h-6),4); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawHole(time){
+    const {x,y} = state.hole;
+    const pulse = 1 + Math.sin(time*0.005)*0.12;
+    ctx.save();
+    // 内黑洞
+    ctx.fillStyle = '#05010f';
+    ctx.beginPath(); ctx.arc(x,y,HOLE_R*0.7,0,Math.PI*2); ctx.fill();
+    // 发光环
+    ctx.lineWidth = 5;
+    ctx.shadowColor = '#5effa0'; ctx.shadowBlur = 24;
+    ctx.strokeStyle = '#5effa0';
+    ctx.beginPath(); ctx.arc(x,y,HOLE_R*pulse,0,Math.PI*2); ctx.stroke();
+    // 外扩光环
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 30;
+    ctx.strokeStyle = 'rgba(255,217,94,0.7)';
+    ctx.beginPath(); ctx.arc(x,y,HOLE_R*pulse + 8,0,Math.PI*2); ctx.stroke();
+    // 旗标光点
+    ctx.shadowColor = '#ffd95e'; ctx.shadowBlur = 14;
+    ctx.fillStyle = '#ffd95e';
+    ctx.beginPath(); ctx.arc(x, y - HOLE_R*pulse, 3.5, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBall(time){
+    const b = state.ball;
+    // 进洞缩小
+    let r = BALL_R;
+    if (state.sinking) r = BALL_R * Math.max(0, 1 - state.sinkT*2.2);
+    ctx.save();
+    // 辉光
+    const g = ctx.createRadialGradient(b.x,b.y,2,b.x,b.y,r*2.4);
+    g.addColorStop(0,'#ffffff');
+    g.addColorStop(0.4,'#ff5ec8');
+    g.addColorStop(1,'rgba(255,46,136,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(b.x,b.y,r*2.4,0,Math.PI*2); ctx.fill();
+    // 球体
+    ctx.shadowColor = '#ff2e88'; ctx.shadowBlur = 20;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(b.x,b.y,r,0,Math.PI*2); ctx.fill();
+    // 高光
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(94,240,255,0.9)';
+    ctx.beginPath(); ctx.arc(b.x - r*0.3, b.y - r*0.3, r*0.35, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawAim(){
+    const b = state.ball;
+    // 拖拽向量(从当前点指向球 = 弹弓反方向 = 发射方向)
+    const dx = state.aimStart.x - state.aimCur.x;
+    const dy = state.aimStart.y - state.aimCur.y;
+    const pull = Math.hypot(dx, dy);
+    if (pull < 4) return;
+    const power = Math.min(pull / 300, 1); // 0..1
+    const ang = Math.atan2(dy, dx);
+    const lineLen = 60 + power * 360;
+
+    ctx.save();
+    // 发射方向虚线
+    ctx.setLineDash([14, 12]);
+    ctx.lineWidth = 4;
+    ctx.shadowColor = '#5ef0ff'; ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#5ef0ff';
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x + Math.cos(ang)*lineLen, b.y + Math.sin(ang)*lineLen);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 箭头
+    const ex = b.x + Math.cos(ang)*lineLen, ey = b.y + Math.sin(ang)*lineLen;
+    ctx.fillStyle = '#5ef0ff';
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - Math.cos(ang-0.4)*22, ey - Math.sin(ang-0.4)*22);
+    ctx.lineTo(ex - Math.cos(ang+0.4)*22, ey - Math.sin(ang+0.4)*22);
+    ctx.closePath(); ctx.fill();
+
+    // 反方向拖拽指示(从球到手指,品红)
+    ctx.setLineDash([6,8]);
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#ff2e88'; ctx.shadowBlur = 10;
+    ctx.strokeStyle = '#ff5ec8';
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(state.aimCur.x, state.aimCur.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 力度环(颜色随力度从青->金->粉)
+    const col = power < 0.5 ? '#5ef0ff' : power < 0.8 ? '#ffd95e' : '#ff2e88';
+    ctx.lineWidth = 6;
+    ctx.shadowColor = col; ctx.shadowBlur = 16;
+    ctx.strokeStyle = col;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, BALL_R + 10, -Math.PI/2, -Math.PI/2 + power*Math.PI*2);
+    ctx.stroke();
+
+    // 力度文字
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = col;
+    ctx.font = "20px 'Press Start 2P', monospace";
+    ctx.textAlign = 'center';
+    ctx.fillText(Math.round(power*100) + '%', b.x, b.y - BALL_R - 28);
+    ctx.restore();
+  }
+
+  /* =========================================================
+     输入:鼠标 + 触摸(弹弓瞄准)
+     ========================================================= */
+  function pointerDown(clientX, clientY){
+    if (!state.running || state.sinking) return;
+    if (state.ball.moving) return;      // 球运动中不可瞄准
+    const p = toLogic(clientX, clientY);
+    // 命中球附近(放宽点击范围,触屏友好)
+    const d = Math.hypot(p.x - state.ball.x, p.y - state.ball.y);
+    if (d < BALL_R * 4){
+      state.aiming = true;
+      state.aimStart = {x: state.ball.x, y: state.ball.y}; // 锚点用球心
+      state.aimCur = {x: p.x, y: p.y};
+    }
+  }
+  function pointerMove(clientX, clientY){
+    if (!state.aiming) return;
+    state.aimCur = toLogic(clientX, clientY);
+  }
+  function pointerUp(){
+    if (!state.aiming) return;
+    state.aiming = false;
+    const dx = state.aimStart.x - state.aimCur.x;
+    const dy = state.aimStart.y - state.aimCur.y;
+    const pull = Math.hypot(dx, dy);
+    if (pull < 8) return;              // 太短不击球
+    const power = Math.min(pull / 300, 1);
+    const speed = power * MAX_POWER;
+    const ang = Math.atan2(dy, dx);
+    state.ball.vx = Math.cos(ang) * speed;
+    state.ball.vy = Math.sin(ang) * speed;
+    state.ball.moving = true;
+    state.shots++;
+    state.total++;
+    updateHUD();
+    Audio.hit(power);
+  }
+
+  // 鼠标事件
+  cv.addEventListener('mousedown', e => { pointerDown(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', e => { pointerMove(e.clientX, e.clientY); });
+  window.addEventListener('mouseup', () => { pointerUp(); });
+  // 触摸事件(passive:false 以便 preventDefault 阻止滚动)
+  cv.addEventListener('touchstart', e => {
+    if (e.touches.length) { pointerDown(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
+  }, {passive:false});
+  window.addEventListener('touchmove', e => {
+    if (e.touches.length) { pointerMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
+  }, {passive:false});
+  window.addEventListener('touchend', e => { pointerUp(); e.preventDefault(); }, {passive:false});
+
+  /* =========================================================
+     按钮
+     ========================================================= */
+  btnStart.addEventListener('click', () => {
+    Audio.start();             // 首次手势启动音频
+    startMask.classList.add('hidden');
+    state.running = true;
+    state.total = 0;
+    loadLevel(0);
+  });
+  btnAgain.addEventListener('click', () => {
+    Audio.start();             // 再次确保音频上下文已 resume
+    winMask.classList.add('hidden');
+    state.running = true;
+    state.total = 0;
+    loadLevel(0);
+  });
+  btnReset.addEventListener('click', () => {
+    if (!state.running) return;
+    // 重开本关:扣回本关已用杆数
+    state.total -= state.shots;
+    if (state.total < 0) state.total = 0;
+    loadLevel(state.levelIdx);
+  });
+  let muted = false;
+  btnMute.addEventListener('click', () => {
+    muted = !muted;
+    Audio.setMuted(muted);
+    btnMute.textContent = muted ? '🔇 SND' : '🔊 SND';
+  });
+
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => { setTimeout(resize, 100); });
+
+  /* =========================================================
+     主循环:requestAnimationFrame + delta time
+     ========================================================= */
+  let last = performance.now();
+  function loop(now){
+    let dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.05) dt = 0.05;   // 限制最大步长(防止卡顿穿墙)
+
+    if (window.__neonAI) window.__neonAI(now);
+    if (state.running){
+      updatePhysics(dt);
+      updateParticles(dt);
+      updateSink(dt);
+    }
+    draw(now);
+    requestAnimationFrame(loop);
+  }
+
+  /* =========================================================
+     自动演示 AI + 自录画面
+     ?demo       => 免手势开局 + AI 自动游玩
+     ?record=N   => 自动演示并录制主 canvas N 秒后下载 webm
+     无参数      => 普通玩法完全不变
+     ========================================================= */
+  const DEMO = (() => {
+    const params = new URLSearchParams(location.search);
+    const isDemo = params.has('demo') || params.has('record');
+    const recSec = params.has('record') ? (parseFloat(params.get('record')) || 30) : 0;
+
+    // 直接进入游玩(绕过开始遮罩,无需手势)
+    function beginPlay(){
+      try { Audio.start(); } catch(e){}   // 无手势时音频会被挂起,无妨
+      startMask.classList.add('hidden');
+      winMask.classList.add('hidden');
+      state.running = true;
+      state.total = 0;
+      loadLevel(0);
+    }
+
+    /* ---- 简单 AI:瞄准球洞方向 + 接近合适力度(可少量过冲)---- */
+    let aiCooldown = 0;   // 击球后等待小段时间再判定
+    function aiTick(dt){
+      if (!state.running) return;
+      // 球还在动 / 进洞动画 / 全部通关遮罩出现时,不操作
+      if (state.ball.moving || state.sinking) { aiCooldown = 0.35; return; }
+      aiCooldown -= dt;
+      if (aiCooldown > 0) return;
+
+      const b = state.ball, hole = state.hole;
+      let ang = Math.atan2(hole.y - b.y, hole.x - b.x);
+      const dist = Math.hypot(hole.x - b.x, hole.y - b.y);
+
+      // 力度:按距离换算所需初速度,略微过冲以保证能到达;封顶 MAX_POWER
+      // 经验系数:摩擦下行进距离 ≈ speed * k,反推所需 speed
+      let speed = dist * 1.25 + 260;
+      speed = Math.min(speed, MAX_POWER);
+
+      // 障碍较多的关(中后关)瞄准点加一点随机扰动,避免被同一面墙反复挡住
+      if (state.levelIdx >= 1){
+        ang += (Math.random() - 0.5) * 0.10;
+        speed *= 0.92 + Math.random() * 0.16;
+        speed = Math.min(speed, MAX_POWER);
+      }
+
+      // 直接以击球结果驱动(等价于一次完美的弹弓拖拽)
+      state.ball.vx = Math.cos(ang) * speed;
+      state.ball.vy = Math.sin(ang) * speed;
+      state.ball.moving = true;
+      state.shots++;
+      state.total++;
+      updateHUD();
+      try { Audio.hit(Math.min(speed / MAX_POWER, 1)); } catch(e){}
+      aiCooldown = 0.4;
+    }
+
+    // 把 AI tick 挂进主循环(loop 内每帧调用 window.__neonAI)
+    if (isDemo){
+      let aiLast = performance.now();
+      window.__neonAI = function(now){
+        let d = (now - aiLast) / 1000; aiLast = now;
+        if (d > 0.05) d = 0.05;
+        aiTick(d);
+        // 通关后自动重开,持续演示多局
+        if (!state.running && winMask && !winMask.classList.contains('hidden')){
+          beginPlay();
+        }
+      };
+    }
+
+    /* ---- 录制主 canvas ---- */
+    function record(seconds){
+      try {
+        const stream = cv.captureStream(30);
+        let mt = 'video/webm;codecs=vp9';
+        if (!MediaRecorder.isTypeSupported(mt)) mt = 'video/webm';
+        const mr = new MediaRecorder(stream, { mimeType: mt, videoBitsPerSecond: 9000000 });
+        const chunks = [];
+        mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+        mr.onstop = () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'neon-golf.webm';
+          document.body.appendChild(a);
+          try { a.click(); } catch(e){}
+        };
+        mr.start();
+        setTimeout(() => mr.stop(), seconds * 1000);
+      } catch (e) { console.error('record failed', e); }
+    }
+
+    function start(){
+      if (!isDemo) return;
+      beginPlay();
+      if (recSec > 0){
+        // 等一帧确保 canvas 已有内容再开录
+        setTimeout(() => record(recSec), 300);
+      }
+    }
+    return { isDemo, start };
+  })();
+
+  // ---------- 初始化 ----------
+  resize();
+  refreshBest();
+  // 预载第 1 关用于开始遮罩下的背景展示
+  loadLevel(0);
+  requestAnimationFrame(loop);
+  DEMO.start();
+})();
+</script>
+</body>
+</html>

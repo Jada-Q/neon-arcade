@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>技术分析报告 · 34 款浏览器游戏</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{ --bg:#0b0d14; --card:#141823; --stroke:#232838; --ink:#e8edf7; --dim:#94a0b6;
+         --cyan:#34e2ff; --pink:#ff4f8b; --green:#5effa0; --gold:#ffd95e; }
+  *{margin:0;box-sizing:border-box;}
+  body{ background:var(--bg); color:var(--ink); font-family:'Inter',system-ui,sans-serif; line-height:1.7;
+        padding:48px 22px 120px; }
+  .wrap{ max-width:940px; margin:0 auto; }
+  h1{ font-family:'Chakra Petch',sans-serif; font-size:38px; letter-spacing:.5px;
+      background:linear-gradient(90deg,var(--cyan),#4f9dff,var(--pink)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .lede{ color:var(--dim); font-size:16px; margin:8px 0 30px; }
+  h2{ font-family:'Chakra Petch',sans-serif; font-size:25px; margin:42px 0 12px; padding-top:18px; border-top:1px solid var(--stroke); color:#fff; }
+  h2 .n{ color:var(--cyan); font-size:18px; margin-right:8px; }
+  h3{ font-size:18px; margin:24px 0 8px; color:var(--cyan); }
+  p{ margin:10px 0; }
+  ul,ol{ margin:10px 0 10px 22px; } li{ margin:6px 0; }
+  code{ background:#1c2130; color:#9fd8ff; padding:1px 6px; border-radius:5px; font-size:13.5px; }
+  b,strong{ color:#fff; }
+  em{ color:var(--gold); font-style:normal; }
+  table{ width:100%; border-collapse:collapse; margin:16px 0; font-size:14.5px; }
+  th,td{ border:1px solid var(--stroke); padding:9px 12px; text-align:left; vertical-align:top; }
+  th{ background:#1a1f2b; color:var(--cyan); font-weight:700; }
+  tr:nth-child(even) td{ background:#11151f; }
+  .tag{ display:inline-block; background:#1c2130; border:1px solid var(--stroke); color:var(--dim); font-size:12px; padding:2px 8px; border-radius:7px; margin:2px; }
+  .box{ background:var(--card); border:1px solid var(--stroke); border-left:3px solid var(--cyan); border-radius:10px; padding:14px 18px; margin:16px 0; }
+  .box.warn{ border-left-color:var(--gold); } .box.pink{ border-left-color:var(--pink); }
+  .toc{ background:var(--card); border:1px solid var(--stroke); border-radius:12px; padding:18px 24px; columns:2; }
+  .toc a{ color:var(--ink); text-decoration:none; font-size:14px; } .toc a:hover{ color:var(--cyan); }
+  .kpi{ display:flex; gap:14px; flex-wrap:wrap; margin:18px 0; }
+  .kpi div{ background:var(--card); border:1px solid var(--stroke); border-radius:12px; padding:14px 20px; min-width:130px; }
+  .kpi .v{ font-family:'Chakra Petch'; font-size:30px; color:var(--cyan); } .kpi .l{ color:var(--dim); font-size:13px; }
+  .foot{ margin-top:48px; color:var(--dim); font-size:13px; border-top:1px solid var(--stroke); padding-top:18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>浏览器游戏技术分析报告</h1>
+<div class="lede">一套通用底座 · 34 款游戏 · 10+ 种渲染/交互技术 · 多智能体并行生产 — 2026-06</div>
+
+<div class="kpi">
+  <div><div class="v">34</div><div class="l">款游戏</div></div>
+  <div><div class="v">10+</div><div class="l">种核心技术</div></div>
+  <div><div class="v">~50</div><div class="l">个 AI agent 产出</div></div>
+  <div><div class="v">31</div><div class="l">段演示预告片</div></div>
+  <div><div class="v">100%</div><div class="l">单文件 · 离线可玩</div></div>
+</div>
+
+<div class="toc">
+  <a href="#s1">① 摘要与设计哲学</a><br>
+  <a href="#s2">② 通用底座:任何游戏的 80%</a><br>
+  <a href="#s3">③ 渲染技术分层</a><br>
+  <a href="#s4">④ 音频技术</a><br>
+  <a href="#s5">⑤ 输入与交互技术</a><br>
+  <a href="#s6">⑥ 自动演示 AI</a><br>
+  <a href="#s7">⑦ 录制与视频生产管线</a><br>
+  <a href="#s8">⑧ 持久化 / PWA / 国际化</a><br>
+  <a href="#s9">⑨ 工程教训:反复出现的坑</a><br>
+  <a href="#s10">⑩ 生产方法论:多智能体编排</a><br>
+  <a href="#s11">⑪ 浏览器 API 清单</a><br>
+  <a href="#s12">⑫ 局限与权衡</a><br>
+  <a href="#s13">⑬ 结论</a>
+</div>
+
+<h2 id="s1"><span class="n">①</span>摘要与设计哲学</h2>
+<p>本项目从"一个旋转的立方体"起步,迭代出一款功能完整的 3D 赛车游戏,随后以同一套工程底座、用多智能体并行扩展出 <b>34 款不同类型的游戏</b>,覆盖竞速、跑酷、节奏、射击、塔防、物理、益智、平台、迷宫、体素,直到摄像头/语音等硬件交互。</p>
+<p>贯穿始终的四条设计原则:</p>
+<ul>
+  <li><b>单文件、零构建</b>:每款游戏是一个自包含 HTML,双击即玩,无打包、无后端。</li>
+  <li><b>离线优先</b>:除按需的 CDN 库(Three.js / matter.js / MediaPipe)与字体外不依赖外部素材;贴图、音效、配乐全部<em>用代码现场生成</em>。</li>
+  <li><b>统一美学</b>:合成波(OutRun)霓虹风格——日落渐变、扫描线、霓虹边框、像素字,形成跨 34 款的视觉一致性。</li>
+  <li><b>可演示</b>:每款内建 <code>?demo</code> 自动演示 AI 与 <code>?record</code> 自录,使"无人值守生成演示视频"成为流水线。</li>
+</ul>
+<div class="box"><b>核心洞察:</b>不同"游戏类型"的差异,主要不在底层引擎,而在四个旋钮——<em>维度(2D/3D/第一人称)、是否需要物理、输入方式、胜负结构</em>。底座不变,换旋钮即得新类型。这正是 34 款能共享同一工程内核的根本原因。</p></div>
+
+<h2 id="s2"><span class="n">②</span>通用底座:任何游戏的 80%</h2>
+<p>每款游戏都由同样的 6 块构成,这套"内核"占了任意游戏代码量的约 80%:</p>
+<table>
+<tr><th>积木</th><th>实现要点</th></tr>
+<tr><td><b>游戏循环</b></td><td><code>requestAnimationFrame</code> + delta time(<code>dt = (now-last)/1000</code>,并 <code>clamp(dt,0.05)</code> 防卡顿跳变);所有运动按 <code>×dt</code> 推进,保证不同帧率手感一致。</td></tr>
+<tr><td><b>状态机</b></td><td><code>menu → playing → over/win → 重开</code> 的闭环;遮罩显隐与输入门控由状态驱动。后期统一加 <code>try/catch</code> 包裹 update/draw,使单帧异常不打断 rAF 链。</td></tr>
+<tr><td><b>碰撞</b></td><td>2D 用圆-圆 / 圆-矩形 / AABB;3D 用 <code>THREE.Box3.intersectsBox</code>;高速场景用<em>跨平面扫描</em>(记录 prevZ,跨过判定面才触发)防穿透漏判。</td></tr>
+<tr><td><b>对象池 / 程序化生成</b></td><td>障碍/金币/敌人/路面分段循环复用(飞出屏幕回收再随机),避免无限增长导致卡顿。</td></tr>
+<tr><td><b>反馈(juice)</b></td><td>命中/得分/失败的视觉+听觉反馈:撞击顿帧、红闪、镜头抖动、粒子、连击弹字。</td></tr>
+<tr><td><b>存档 / 封装</b></td><td><code>localStorage</code> 最高分、PWA 离线、国际化、双镜头/分屏;读写一律 try/catch(隐私模式下 localStorage 会抛异常)。</td></tr>
+</table>
+
+<h2 id="s3"><span class="n">③</span>渲染技术分层</h2>
+<p>34 款游戏跨越了浏览器几乎所有主流渲染路径:</p>
+<table>
+<tr><th>技术</th><th>款数</th><th>代表游戏</th><th>特点</th></tr>
+<tr><td><b>Canvas 2D</b></td><td>~23</td><td>节奏/射击/塔防/弹球/光轨/方块/贪吃蛇/打砖块/平台/迷宫/三消/弹幕/钓鱼/大西瓜/推箱子/Flappy/2048/扫雷/入侵者/切水果…</td><td>即时模式绘图,主力。贴图用 Canvas 现画。</td></tr>
+<tr><td><b>WebGL / Three.js 3D</b></td><td>4</td><td>3D 赛车、3D 跑酷、第一人称迷宫、体素世界</td><td>场景图、相机、灯光、雾、PBR 材质;赛车用<em>伪 3D</em>技巧。</td></tr>
+<tr><td><b>GLSL 着色器</b></td><td>1</td><td>霓虹隧道</td><td>片元着色器 raymarching/极坐标实时生成隧道,GPU 直接算每个像素。</td></tr>
+<tr><td><b>DOM + CSS</b></td><td>1</td><td>霓虹翻牌</td><td>无 canvas;卡牌是 DOM 元素,翻转用 CSS 3D <code>rotateY + perspective</code>。</td></tr>
+<tr><td><b>SVG 矢量</b></td><td>1</td><td>霓虹打地鼠</td><td>整画面 SVG 元素;矢量可无限缩放,动画用属性/CSS transform。</td></tr>
+<tr><td><b>matter.js 物理引擎</b></td><td>1</td><td>霓虹弹珠机</td><td>真刚体/重力/碰撞,小球在钉阵中真实弹跳落槽。</td></tr>
+<tr><td><b>体素 / InstancedMesh</b></td><td>1</td><td>霓虹体素世界</td><td>Three.js 实例化渲染大量方块,射线拾取(Raycaster)增删体素。</td></tr>
+</table>
+
+<h3>伪 3D 的两个招牌技巧(赛车/跑酷)</h3>
+<p>赛车与跑酷并非真做曲面赛道,而是用两个函数把"直路"伪装成弯道与坡道:</p>
+<ul>
+  <li><code>bendX(z)</code> — <b>弯道</b>:离镜头越远的物体横向偏移越大(<code>偏移 ∝ 曲率 × 距离²</code>),路面/护栏/车辆一起套用,直路看起来就蜿蜒了;近处偏移≈0,所以碰撞仍按车道判定,公平不变。</li>
+  <li><code>hillY(z)</code> — <b>坡道</b>:用一整块带网格细分的地面平面,<em>每帧按"赛道位置"位移它的顶点</em>(<code>positions.setZ(...)</code>),单网格、无接缝;车辆与地面用同一个 <code>hillY</code> 函数,所以车永远精准贴坡。</li>
+</ul>
+<p>这类"伪 3D"以极小代价获得了立体观感,是 90 年代街机赛车的经典做法在 WebGL 上的复刻。</p>
+
+<h3>着色器隧道:把游戏画进 fragment shader</h3>
+<p>霓虹隧道用一个铺满屏的四边形 + 自定义片元着色器,随 <code>uTime</code> 推进,用极坐标与 raymarching 思路实时生成扭曲发光的隧道壁。这是与其余 33 款最不同的渲染范式——<em>没有"物体",只有一段每像素求值的数学</em>。审查中修复了它最隐蔽的 bug:高速时单帧推进量超过碰撞判定窗口导致穿墙漏判,改为跨判定面触发。</p>
+
+<h2 id="s4"><span class="n">④</span>音频技术</h2>
+<p>所有音效与配乐<b>不用任何音频文件</b>,全部用 Web Audio API 实时合成:</p>
+<ul>
+  <li><b>音效</b>:振荡器(sine/square/sawtooth/triangle)+ 增益包络(快速 attack、指数 decay)合成币声、击中、爆炸、UI 提示。</li>
+  <li><b>配乐</b>:旋律 + 贝斯 + 鼓点的循环,用<em>前瞻调度器</em>(以 <code>audioCtx.currentTime</code> 提前排定音符,setInterval 仅做调度)保证采样级精准、无卡顿。</li>
+  <li><b>空间音频</b>(赛车):对手车擦身时用 <code>StereoPannerNode</code> 按左右方位播"嗖"声。</li>
+  <li><b>程序化引擎声</b>(赛车):一条持续锯齿波,频率随车速实时升降。</li>
+  <li><b>节奏游戏音画同步</b>(节奏/跳舞):谱面音符的位置由 <code>音符时间 − audioCtx.currentTime</code> 推导,判定窗口(Perfect/Good/Miss)以采样时钟对齐,而非依赖 rAF 时间。</li>
+  <li><b>语音合成</b>:赛车的领航员、预告片旁白早期用 <code>SpeechSynthesis</code>(后改为系统 TTS 离线生成音频)。</li>
+</ul>
+<div class="box warn"><b>浏览器自动播放策略</b>:AudioContext 必须在<em>用户手势</em>(点击开始)之后创建/<code>resume()</code>,否则被挂起。34 款一律遵守;演示模式下虽免手势创建(用于纯画面录制)也以 try/catch 容错、不报错。</div>
+
+<h2 id="s5"><span class="n">⑤</span>输入与交互技术</h2>
+<table>
+<tr><th>输入</th><th>API</th><th>用在</th></tr>
+<tr><td>键盘</td><td>keydown/keyup(用 <code>e.code</code> 去重)</td><td>全部</td></tr>
+<tr><td>触屏 / 指针</td><td>pointer / touch(<code>passive:false</code> + preventDefault)</td><td>全部(移动端)</td></tr>
+<tr><td>陀螺仪倾斜</td><td><code>DeviceOrientation</code>(iOS 需 requestPermission)</td><td>赛车(手机倾斜转向)</td></tr>
+<tr><td>摄像头 + 手部追踪</td><td><b>MediaPipe Hands</b>(CV/ML)</td><td>手势接物</td></tr>
+<tr><td>摄像头 + 人脸网格</td><td><b>MediaPipe FaceMesh</b></td><td>头控躲避(头位移动、张嘴触发)</td></tr>
+<tr><td>语音识别</td><td><b>Web Speech</b> <code>SpeechRecognition</code></td><td>语音飞行(喊"上/下/开火")</td></tr>
+</table>
+<p>硬件交互三款的关键工程点是<b>优雅降级</b>:权限在手势后才请求;无摄像头/麦克风、拒权限、或浏览器不支持时,不白屏,显示提示并自动切换<em>键鼠兜底</em>仍可玩;摄像头画面镜像显示且左右映射不反。</p>
+
+<h2 id="s6"><span class="n">⑥</span>自动演示 AI(<code>?demo</code>)</h2>
+<p>为了"无人值守录演示",几乎每款都内建了一个<em>能打得不错的</em>规则型 AI。它们是一组小而精的算法范例:</p>
+<table>
+<tr><th>游戏</th><th>AI 策略</th></tr>
+<tr><td>贪吃蛇 / 迷宫</td><td><b>BFS 寻路</b>朝目标(食物/豆子/出口),配合洪水填充判断不困死自己 / 躲幽灵</td></tr>
+<tr><td>3D 迷宫</td><td><b>右手法则 / BFS</b>走向出口,起点落在墙格时就近回退到通路格</td></tr>
+<tr><td>俄罗斯方块</td><td>对当前方块<b>枚举所有落点</b>,按"消行多、孔洞少、堆高低"评分选最优,自动平移+旋转</td></tr>
+<tr><td>2048</td><td><b>启发式</b>:固定方向优先级 + 把大数维持在角落</td></tr>
+<tr><td>扫雷</td><td><b>确定性推理</b>:数字=已标雷数则翻其余、=未知格数则全标雷;无确定步时低概率猜</td></tr>
+<tr><td>推箱子</td><td>每关<b>预存已验证的解法步骤序列</b>回放(避免实时求解器的不稳定)</td></tr>
+<tr><td>打砖块 / Flappy / 弹幕</td><td><b>预测落点 / 缝隙中心</b>对齐走位</td></tr>
+<tr><td>节奏 / 跳舞</td><td>在音符到达判定线的<b>精确时刻</b>触发命中,满连击</td></tr>
+<tr><td>赛车 / 跑酷 / 射击</td><td>对每条车道/方向<b>打分</b>(躲危险、奔奖励)选最优</td></tr>
+</table>
+<p>这些 AI 还承担了"演示连续性"职责:失败/通关后自动重开,保证整段录制都有真实游玩内容。</p>
+
+<h2 id="s7"><span class="n">⑦</span>录制与视频生产管线</h2>
+<p>把"会跑的游戏"变成"可分享的预告片",建立了一条完全自动化的流水线:</p>
+<ol>
+  <li><b>实机录制</b>:
+    <ul>
+      <li>canvas 类(28 款)— <code>canvas.captureStream(30)</code> + <code>MediaRecorder</code>,录主画布并下载 webm;</li>
+      <li>DOM/SVG 类(2 款,无 canvas 无法 captureStream)— 改用 <b>ffmpeg gdigrab</b> 全屏屏幕录制。</li>
+    </ul>
+  </li>
+  <li><b>素材整形</b>:游戏多为竖屏/方屏,ffmpeg 用<em>模糊填充</em>(同一画面 split → 一路放大裁切高斯模糊作背景、一路等比缩放作前景 overlay 居中)铺满 1080×1920 竖屏,既看全又无黑边。</li>
+  <li><b>画面渲染</b>:用 HeyGen 开源的 <b>HyperFrames</b>(HTML→MP4)把"冷开场→镀铬标题→实机片段→CTA"的合成波模板逐帧渲染。关键约束:GSAP 时间轴必须<em>暂停且可 seek</em>(渲染器逐帧 seek 截图),禁用 <code>Date.now/Math.random/setTimeout</code> 保证确定性。</li>
+  <li><b>旁白</b>:Windows 系统 TTS(<code>System.Speech</code> + 中文音色 Huihui)用 SSML <code>prosody</code> 压低音调离线生成讲解音频。</li>
+  <li><b>配乐</b>:用 Node 脚本合成 PCM 写出 WAV(锯齿波旋律 + 三角波贝斯 + 合成鼓)。</li>
+  <li><b>合成</b>:ffmpeg 把画面 + 旁白(<code>adelay</code> 定时)+ 配乐(降音量)<code>amix</code> 混音并 <code>alimiter</code> 限幅,输出最终 MP4。</li>
+</ol>
+<div class="box pink"><b>关键限制:</b>HyperFrames 逐帧渲染<em>无法跑实时 3D 游戏、也录不到网页声音</em>——所以实机画面只能<b>先录成视频再嵌入</b>合成,而非让游戏在渲染器里实时运行。这是整条管线最核心的取舍。</div>
+
+<h2 id="s8"><span class="n">⑧</span>持久化 / PWA / 国际化</h2>
+<ul>
+  <li><b>localStorage</b>:最高分、最快用时、涂装选择、语言、幽灵竞速轨迹(序列化的位置序列)。</li>
+  <li><b>PWA</b>(赛车):<code>manifest.json</code> + Service Worker 缓存外壳与 CDN,可装到桌面、离线运行——但 Service Worker 不支持 <code>file://</code>,需经本地 http 服务。</li>
+  <li><b>国际化</b>(赛车):中/英/日三语,词典 + <code>tr(key)</code> 函数 + <code>applyLang()</code> 刷新所有静态文案与滑块,并同步切换 TTS 语言。</li>
+  <li><b>双镜头分屏</b>(赛车):一个渲染器、两个相机,用 <code>scissor + viewport</code> 渲染同一场景两遍;预警标记用 <code>layers</code> 图层隔离,只在预览镜头出现。</li>
+</ul>
+
+<h2 id="s9"><span class="n">⑨</span>工程教训:反复出现的坑</h2>
+<p>~25 个审查 agent 在静态/CDP 核查中修复了大量真实硬伤,其中几类<b>反复出现、极具代表性</b>,值得作为浏览器游戏的通用 checklist:</p>
+<table>
+<tr><th>坑</th><th>根因</th><th>修法</th></tr>
+<tr><td>录像为空(0.1KB)</td><td><code>MediaRecorder.start()</code> 不带 timeslice,只在 stop 那刻产一块数据;若期间 canvas 被 resize 重置就丢帧</td><td><code>start(250)</code> 周期落块 + resize 仅在尺寸真变时重设画布</td></tr>
+<tr><td>高速碰撞穿透</td><td>碰撞判定用固定窗口,满速单帧位移超过窗口</td><td>记录 prevZ,<em>跨过判定面</em>才触发一次</td></tr>
+<tr><td>"新纪录"误报</td><td>先把 best 更新成本局分,再用 <code>score≥best</code> 判断</td><td>先捕获 <code>isNew = score>best</code> 再更新 best</td></tr>
+<tr><td>AI 演示卡死/冻结</td><td>AI 取整把当前格当成墙、或某分支永不落子,循环停滞画面静止</td><td>就近回退到合法格 / 移动失败即兜底动作</td></tr>
+<tr><td>过关瞬间竞态</td><td>过关有 setTimeout 延迟,期间球落底误扣命 / 重复结算</td><td>加 <code>clearing</code> 过渡锁,期间不扣命不重入</td></tr>
+<tr><td>TDZ 引用错误</td><td><code>let/const</code> 在声明前被引用(连 typeof 都抛)</td><td>把声明提前到引用之前</td></tr>
+<tr><td>GPU 资源泄漏</td><td>换关时共享几何被重复 dispose、克隆材质不释放</td><td>几何只 dispose 一次、逐个释放材质</td></tr>
+<tr><td>摄像头双占用</td><td>手动 getUserMedia 与 MediaPipe Camera 各请求一次同一 video</td><td>只让其一接管,另一处回填 stream</td></tr>
+<tr><td>localStorage 崩溃白屏</td><td>隐私模式/沙箱下 getItem 抛异常中断整个脚本</td><td>读写一律 try/catch,失败回退默认值</td></tr>
+</table>
+
+<h2 id="s10"><span class="n">⑩</span>生产方法论:多智能体编排(ultracode)</h2>
+<p>34 款里的 30 款霓虹游戏由<b>多智能体工作流</b>并行产出。每批的结构是一条流水线:</p>
+<ul>
+  <li><b>建造阶段</b>:N 个 agent <em>并行</em>各做一款,共享同一份"风格 + 录制 + 稳健性"规范(SA + REC),各自带本游戏的 AI 策略说明;</li>
+  <li><b>审查阶段</b>:每款再跟一个<em>对抗式审查 agent</em>,通读代码、直接 Edit 修硬伤(因主控无法在浏览器实跑,审查 agent 担任兜底质检,部分还用 Chrome DevTools Protocol 实测)。</li>
+</ul>
+<p>共约 <b>50 个 agent</b>、数百万 token 并行产出。这套"建造 + 对抗审查"的流水线把"我没法亲手跑每个游戏"的盲区,转化为可规模化的并行质检。规范本身也在迭代——把前一批踩的坑(如录空)写进下一批的硬性要求,后续批次几乎一次成型。</p>
+
+<h2 id="s11"><span class="n">⑪</span>浏览器 API 清单</h2>
+<p>本项目实际用到的 Web 平台能力:</p>
+<p>
+<span class="tag">Canvas 2D</span><span class="tag">WebGL</span><span class="tag">WebGLRenderer (Three.js)</span><span class="tag">GLSL Shaders</span><span class="tag">InstancedMesh</span><span class="tag">Raycaster</span><span class="tag">requestAnimationFrame</span><span class="tag">Web Audio API</span><span class="tag">OscillatorNode</span><span class="tag">GainNode</span><span class="tag">StereoPannerNode</span><span class="tag">AnalyserNode</span><span class="tag">SpeechSynthesis</span><span class="tag">SpeechRecognition</span><span class="tag">getUserMedia</span><span class="tag">MediaPipe Hands</span><span class="tag">MediaPipe FaceMesh</span><span class="tag">canvas.captureStream</span><span class="tag">MediaRecorder</span><span class="tag">DeviceOrientation</span><span class="tag">Pointer/Touch Events</span><span class="tag">localStorage</span><span class="tag">Service Worker</span><span class="tag">Web App Manifest</span><span class="tag">CSS 3D Transforms</span><span class="tag">SVG</span><span class="tag">matter.js</span><span class="tag">importmap / ES Modules</span><span class="tag">Fullscreen / scissor / layers</span>
+</p>
+
+<h2 id="s12"><span class="n">⑫</span>局限与权衡</h2>
+<ul>
+  <li><b>无真·联机</b>:单文件离线做不了真实时多人(需信令/服务器);"多人"以本地双人(同屏)实现。</li>
+  <li><b>硬件交互不可自动演示</b>:摄像头/语音游戏需真人在场,无法无人值守出预告片。</li>
+  <li><b>伪 3D vs 真 3D</b>:赛车/跑酷以伪 3D 换取性能与简洁,牺牲了真实曲面/自由视角。</li>
+  <li><b>自写物理 vs 引擎</b>:多数物理(高尔夫/弹球/大西瓜)为自写,可靠但不及 matter.js 真实;引入引擎则增加体积与复杂度。</li>
+  <li><b>渲染管线的实时性鸿沟</b>:HyperFrames 渲不了实时游戏,必须"先录后嵌",这是预告片管线的根本约束。</li>
+</ul>
+
+<h2 id="s13"><span class="n">⑬</span>结论</h2>
+<p>这 34 款游戏共同证明了一件事:<b>浏览器是一个被低估的、完整的游戏平台。</b>从 Canvas 2D 到 WebGL 3D、从 GLSL 着色器到 DOM/SVG、从自写物理到物理引擎、从键鼠触屏到摄像头/语音/陀螺仪——Web 平台原生就能覆盖几乎所有游戏类型,且无需安装、跨端、离线可玩。</p>
+<p>而真正的杠杆在于:<em>一套通用底座 + 可替换的"四个旋钮" + 多智能体并行生产</em>。底座保证了 80% 的复用,旋钮决定了类型差异,多智能体编排把"做一款"的成本摊薄到可以"一次做一批"。最终,从一个立方体到 34 款游戏,走的不是 34 条路,而是同一条路走了 34 遍——每遍只换一个旋钮。</p>
+
+<div class="foot">生成于 2026-06 · 基于 <code>C:\Users\ptpqi\neon-racer</code> 项目 34 款游戏的真实实现 · 由多智能体并行产出、审查与本报告综合而成。</div>
+
+</div>
+</body>
+</html>

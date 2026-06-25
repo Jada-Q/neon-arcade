@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>霓虹弹幕 · NEON BULLET</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 全局样式 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8;
+    --gold:#ffd95e; --green:#5effa0;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0a0418;}
+  body{
+    font-family:'Chakra Petch',system-ui,'Microsoft YaHei',sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    touch-action:none;-webkit-user-select:none;user-select:none;
+  }
+  /* 游戏舞台:竖屏比例 */
+  #stage{
+    position:relative;
+    height:100vh; max-height:100vh;
+    aspect-ratio:9/16;
+    max-width:100vw;
+    background:linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+    box-shadow:0 0 40px rgba(255,46,136,.4), 0 0 80px rgba(94,240,255,.2);
+    overflow:hidden;
+  }
+  canvas{display:block;width:100%;height:100%;}
+  /* CRT 扫描线叠加 */
+  #crt{
+    position:absolute;inset:0;pointer-events:none;z-index:30;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0px,rgba(0,0,0,.18) 1px,transparent 2px,transparent 3px);
+    mix-blend-mode:multiply;opacity:.55;
+  }
+  /* HUD */
+  #hud{
+    position:absolute;top:0;left:0;right:0;z-index:20;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:10px 12px;pointer-events:none;
+    font-family:'Press Start 2P',monospace;
+    color:var(--cyan);text-shadow:2px 2px 0 #160a36, 0 0 8px var(--cyan);
+    font-size:11px;line-height:1.6;
+  }
+  #hud .right{text-align:right;color:var(--gold);text-shadow:2px 2px 0 #160a36,0 0 8px var(--gold);}
+  #lives{color:var(--pink);text-shadow:2px 2px 0 #160a36,0 0 8px var(--pink);font-size:14px;letter-spacing:2px;margin-top:4px;}
+  /* 静音按钮 */
+  #muteBtn{
+    position:absolute;top:10px;right:12px;z-index:40;
+    pointer-events:auto;cursor:pointer;
+    font-family:'Press Start 2P',monospace;font-size:10px;
+    color:var(--gold);background:rgba(22,10,54,.8);
+    border:2px solid var(--gold);padding:6px 8px;
+    box-shadow:3px 3px 0 var(--pink);
+  }
+  #muteBtn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--pink);}
+  /* 遮罩通用 */
+  .overlay{
+    position:absolute;inset:0;z-index:50;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:24px;
+    background:radial-gradient(ellipse at center,rgba(22,10,54,.72),rgba(10,4,24,.94));
+    backdrop-filter:blur(2px);
+  }
+  .overlay.hidden{display:none;}
+  .title{
+    font-family:'Press Start 2P',monospace;
+    font-size:clamp(18px,5.5vw,34px);line-height:1.5;
+    color:var(--pink);text-shadow:4px 4px 0 var(--cyan),0 0 18px var(--pink);
+    margin-bottom:6px;
+  }
+  .subtitle{
+    font-family:'Press Start 2P',monospace;font-size:clamp(9px,2.5vw,13px);
+    color:var(--cyan);text-shadow:2px 2px 0 #160a36,0 0 8px var(--cyan);
+    margin-bottom:22px;letter-spacing:1px;
+  }
+  .info{
+    font-size:clamp(13px,3.4vw,16px);color:#ffe;line-height:1.9;
+    margin-bottom:24px;max-width:90%;
+  }
+  .info b{color:var(--gold);}
+  .btn{
+    font-family:'Press Start 2P',monospace;font-size:clamp(12px,3.5vw,16px);
+    color:#160a36;background:var(--green);
+    border:none;padding:16px 26px;cursor:pointer;
+    box-shadow:5px 5px 0 var(--magenta);
+    transition:transform .05s, box-shadow .05s;
+  }
+  .btn:active{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--magenta);}
+  .gameover .title{color:var(--gold);text-shadow:4px 4px 0 var(--pink),0 0 18px var(--gold);}
+  .score-line{
+    font-family:'Press Start 2P',monospace;font-size:clamp(11px,3vw,15px);
+    color:var(--cyan);margin:6px 0;text-shadow:2px 2px 0 #160a36;
+  }
+  .score-line .big{color:var(--gold);font-size:1.4em;}
+  .hint{font-size:12px;color:#caa;margin-top:18px;}
+  .flash{animation:fl 1s infinite alternate;}
+  @keyframes fl{from{opacity:1}to{opacity:.4}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+  <div id="crt"></div>
+  <div id="hud">
+    <div>
+      <div>SCORE</div>
+      <div id="score" style="color:#fff;text-shadow:2px 2px 0 #160a36,0 0 8px #fff;">0</div>
+      <div id="lives">♥♥♥</div>
+    </div>
+    <div class="right">
+      <div>HI-SCORE</div>
+      <div id="hiscore">0</div>
+      <div style="color:var(--green);text-shadow:2px 2px 0 #160a36,0 0 8px var(--green);margin-top:4px;font-size:9px;">WAVE <span id="wave">1</span></div>
+    </div>
+  </div>
+  <div id="muteBtn">♪ ON</div>
+
+  <!-- 开始遮罩 -->
+  <div id="startOverlay" class="overlay">
+    <div class="title">NEON<br>BULLET</div>
+    <div class="subtitle">纵版弹幕射击</div>
+    <div class="info">
+      <b>WASD / 方向键</b> 移动 · 触屏拖动<br>
+      自动持续开火 · 在弹幕间隙走位<br>
+      击落敌机得分 · 别被弹幕吃掉
+    </div>
+    <button id="startBtn" class="btn">▶ START</button>
+    <div class="hint">提示:?demo 自动演示 · ?record=N 录制</div>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div id="overOverlay" class="overlay gameover hidden">
+    <div class="title">GAME OVER</div>
+    <div class="score-line">SCORE <span id="finalScore" class="big">0</span></div>
+    <div class="score-line">BEST <span id="finalHi">0</span></div>
+    <button id="retryBtn" class="btn" style="margin-top:20px;">↻ RETRY</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ===================================================================
+   霓虹弹幕 NEON BULLET — 纵版弹幕射击 (单文件, 原生 Canvas 2D)
+   合成波 OutRun 风格 · demo AI 自动游玩 · record 自录制
+=================================================================== */
+
+// ---------- DOM 引用 ----------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d', { alpha:true });
+const scoreEl = document.getElementById('score');
+const hiscoreEl = document.getElementById('hiscore');
+const livesEl = document.getElementById('lives');
+const waveEl = document.getElementById('wave');
+const muteBtn = document.getElementById('muteBtn');
+const startOverlay = document.getElementById('startOverlay');
+const overOverlay = document.getElementById('overOverlay');
+const startBtn = document.getElementById('startBtn');
+const retryBtn = document.getElementById('retryBtn');
+const finalScoreEl = document.getElementById('finalScore');
+const finalHiEl = document.getElementById('finalHi');
+
+// ---------- URL 参数 ----------
+const params = new URLSearchParams(location.search);
+const DEMO = params.has('demo') || params.has('record');
+const RECORD_SEC = params.has('record') ? Math.max(1, parseInt(params.get('record')||'20',10)) : 0;
+
+// ---------- 逻辑分辨率 (竖屏) ----------
+const W = 540, H = 960;       // 内部绘制坐标系
+canvas.width = W; canvas.height = H;
+
+// ---------- 颜色 ----------
+const C = {
+  pink:'#ff2e88', cyan:'#5ef0ff', magenta:'#ff5ec8',
+  gold:'#ffd95e', green:'#5effa0', white:'#ffffff'
+};
+
+// ---------- 工具函数 ----------
+const rand = (a,b)=>a+Math.random()*(b-a);
+const clamp = (v,a,b)=>v<a?a:(v>b?b:v);
+const dist2 = (ax,ay,bx,by)=>{const dx=ax-bx,dy=ay-by;return dx*dx+dy*dy;};
+const TAU = Math.PI*2;
+
+// ===================================================================
+//  Web Audio — 程序化音效 + 合成波循环配乐
+// ===================================================================
+const Audio = (()=>{
+  let actx=null, master=null, musicGain=null, sfxGain=null;
+  let muted=false, started=false, musicTimer=null, step=0;
+  function init(){
+    if(actx) return;
+    try{
+      actx = new (window.AudioContext||window.webkitAudioContext)();
+      master = actx.createGain(); master.gain.value=0.85; master.connect(actx.destination);
+      musicGain = actx.createGain(); musicGain.gain.value=0.28; musicGain.connect(master);
+      sfxGain = actx.createGain(); sfxGain.gain.value=0.55; sfxGain.connect(master);
+    }catch(e){ actx=null; }
+  }
+  function resume(){ if(actx && actx.state==='suspended') actx.resume(); }
+  // 单个振荡器音效
+  function beep(freq, dur, type, vol, slide){
+    if(!actx||muted) return;
+    try{
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type=type||'square'; o.frequency.value=freq;
+      if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(20,slide), actx.currentTime+dur);
+      g.gain.value=vol||0.2;
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur);
+      o.connect(g); g.connect(sfxGain); o.start(); o.stop(actx.currentTime+dur);
+    }catch(e){}
+  }
+  function noise(dur, vol){
+    if(!actx||muted) return;
+    try{
+      const n=actx.createBufferSource();
+      const buf=actx.createBuffer(1, actx.sampleRate*dur, actx.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*(1-i/d.length);
+      n.buffer=buf;
+      const g=actx.createGain(); g.gain.value=vol||0.3;
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur);
+      const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1800;
+      n.connect(f); f.connect(g); g.connect(sfxGain); n.start(); n.stop(actx.currentTime+dur);
+    }catch(e){}
+  }
+  // 音效封装
+  const sfx = {
+    shoot(){ beep(rand(820,900),0.05,'square',0.07,420); },
+    hit(){ beep(rand(300,360),0.05,'square',0.12,160); },
+    explode(){ noise(0.32,0.4); beep(120,0.3,'sawtooth',0.18,40); },
+    playerHit(){ noise(0.5,0.5); beep(220,0.5,'sawtooth',0.3,60); },
+    power(){ beep(660,0.08,'sine',0.2); setTimeout(()=>beep(990,0.12,'sine',0.2),80); },
+    boss(){ beep(80,0.6,'sawtooth',0.3,50); },
+  };
+  // 合成波循环配乐:简单 bassline + arpeggio
+  const bass=[55,55,82.4,55, 49,49,73.4,49]; // A1 ... G1
+  const arp=[440,554.4,659.3,554.4]; // A C# E arpeggio
+  function tick(){
+    if(!actx) return;
+    if(!muted){
+      const b=bass[step%bass.length];
+      // 低音
+      try{
+        const o=actx.createOscillator(),g=actx.createGain();
+        o.type='sawtooth'; o.frequency.value=b;
+        g.gain.value=0.0001; g.gain.linearRampToValueAtTime(0.18,actx.currentTime+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+0.28);
+        const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=420;
+        o.connect(f); f.connect(g); g.connect(musicGain); o.start(); o.stop(actx.currentTime+0.3);
+      }catch(e){}
+      // 琶音 (每两拍)
+      if(step%2===0){
+        try{
+          const a=arp[(step/2|0)%arp.length];
+          const o=actx.createOscillator(),g=actx.createGain();
+          o.type='square'; o.frequency.value=a*2;
+          g.gain.value=0.0001; g.gain.linearRampToValueAtTime(0.06,actx.currentTime+0.01);
+          g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+0.22);
+          o.connect(g); g.connect(musicGain); o.start(); o.stop(actx.currentTime+0.24);
+        }catch(e){}
+      }
+    }
+    step++;
+  }
+  function startMusic(){
+    if(musicTimer) return;
+    musicTimer = setInterval(tick, 230); // ~130 BPM 八分音
+  }
+  function start(){
+    init(); resume(); started=true; startMusic();
+  }
+  function toggleMute(){
+    muted=!muted;
+    if(master) master.gain.value = muted?0:0.85;
+    return muted;
+  }
+  return { start, resume, sfx, toggleMute, isMuted:()=>muted, isStarted:()=>started };
+})();
+
+// ===================================================================
+//  游戏状态
+// ===================================================================
+let state = 'menu';   // menu | play | over
+let score=0, hiscore=0, lives=3, wave=1;
+let waveTimer=0, spawnTimer=0, gameTime=0;
+let shake=0, hitFlash=0;
+let invuln=0;         // 玩家受击无敌帧
+let bossActive=false;
+
+try{ hiscore = parseInt(localStorage.getItem('neonBulletHi')||'0',10)||0; }catch(e){}
+hiscoreEl.textContent = hiscore;
+
+// 实体数组
+let player=null;
+let enemies=[], pBullets=[], eBullets=[], particles=[], powers=[], stars=[], floaters=[];
+
+// 玩家对象
+function makePlayer(){
+  return { x:W/2, y:H*0.78, r:13, speed:340, fireCd:0, power:1, t:0 };
+}
+
+// 背景星空 (合成波网格星点)
+function initStars(){
+  stars=[];
+  for(let i=0;i<70;i++) stars.push({ x:rand(0,W), y:rand(0,H), z:rand(0.3,1), s:rand(0.5,2) });
+}
+
+// ---------- 输入 ----------
+const keys={};
+window.addEventListener('keydown',e=>{
+  keys[e.key.toLowerCase()]=true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
+});
+window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+
+// 触屏 / 鼠标拖动
+let pointer={active:false, x:W/2, y:H*0.78};
+function canvasPos(clientX, clientY){
+  const r=canvas.getBoundingClientRect();
+  return { x:(clientX-r.left)/r.width*W, y:(clientY-r.top)/r.height*H };
+}
+function onDown(x,y){ pointer.active=true; const p=canvasPos(x,y); pointer.x=p.x; pointer.y=p.y; }
+function onMove(x,y){ if(!pointer.active)return; const p=canvasPos(x,y); pointer.x=p.x; pointer.y=p.y; }
+function onUp(){ pointer.active=false; }
+canvas.addEventListener('mousedown',e=>onDown(e.clientX,e.clientY));
+window.addEventListener('mousemove',e=>onMove(e.clientX,e.clientY));
+window.addEventListener('mouseup',onUp);
+canvas.addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];onDown(t.clientX,t.clientY);},{passive:false});
+canvas.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];onMove(t.clientX,t.clientY);},{passive:false});
+canvas.addEventListener('touchend',e=>{e.preventDefault();onUp();},{passive:false});
+
+// ===================================================================
+//  生成 / 实体逻辑
+// ===================================================================
+function spawnEnemy(type, x, y, hp, opt){
+  opt=opt||{};
+  enemies.push({
+    type, x, y, r:opt.r||16, hp, maxhp:hp,
+    vx:opt.vx||0, vy:opt.vy||60,
+    t:rand(0,TAU), fireCd:rand(0.4,1.6),
+    pattern:opt.pattern||'aim', amp:opt.amp||0, baseX:x,
+    score:opt.score||100, color:opt.color||C.cyan, dead:false,
+    enter:opt.enter||0, // 入场缓动
+    boss:type==='boss'
+  });
+}
+
+// 一波敌人
+function spawnWave(){
+  const w=wave;
+  const kind = w % 5;
+  if(w>0 && w%6===0 && !bossActive){
+    spawnBoss(); return;
+  }
+  if(kind===1||kind===0){
+    // 横排俯冲
+    const n=5+Math.min(4,(w/2|0));
+    for(let i=0;i<n;i++){
+      const x=W*(i+1)/(n+1);
+      spawnEnemy('grunt', x, -40-i*8, 2+(w/3|0), {
+        vy:rand(55,80), pattern:'aim', color:C.cyan, score:120,
+        amp:rand(30,70), baseX:x
+      });
+    }
+  } else if(kind===2){
+    // V 字编队
+    const n=7;
+    for(let i=0;i<n;i++){
+      const off=Math.abs(i-(n-1)/2);
+      spawnEnemy('grunt', W*(i+1)/(n+1), -40-off*30, 2+(w/3|0), {
+        vy:65, pattern:(i%2?'spread':'aim'), color:C.magenta, score:130, amp:0
+      });
+    }
+  } else if(kind===3){
+    // 正弦摇摆射手
+    const n=4+Math.min(3,(w/3|0));
+    for(let i=0;i<n;i++){
+      const x=W*(i+1)/(n+1);
+      spawnEnemy('weaver', x, -40-i*40, 3+(w/3|0), {
+        vy:40, pattern:'ring', amp:rand(60,110), baseX:x, color:C.pink, score:180, r:18
+      });
+    }
+  } else {
+    // 散兵
+    const n=6+Math.min(6,w);
+    for(let i=0;i<n;i++){
+      const x=rand(40,W-40);
+      spawnEnemy('grunt', x, -rand(40,260), 2+(w/4|0), {
+        vy:rand(60,95), pattern:i%3===0?'spread':'aim', color:C.gold, score:110, amp:rand(0,50), baseX:x
+      });
+    }
+  }
+}
+
+function spawnBoss(){
+  bossActive=true;
+  spawnEnemy('boss', W/2, -120, 120+wave*16, {
+    r:54, vy:30, pattern:'boss', color:C.pink, score:3000, amp:0, baseX:W/2, enter:1
+  });
+  Audio.sfx.boss();
+  addFloater(W/2, H*0.3, 'WARNING', C.pink, 2.2, 30);
+}
+
+// 敌弹
+function eBullet(x,y,vx,vy,r,color){
+  eBullets.push({x,y,vx,vy,r:r||6,color:color||C.pink,t:0});
+}
+// 玩家弹
+function pBullet(x,y,vx,vy){
+  pBullets.push({x,y,vx,vy,r:5});
+}
+// 粒子
+function burst(x,y,color,n,spd){
+  n=n||14;
+  for(let i=0;i<n;i++){
+    const a=rand(0,TAU), s=rand(0.4,1)*(spd||220);
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rand(0.3,0.7),t:0,color,r:rand(1.5,4)});
+  }
+}
+// 飘字
+function addFloater(x,y,text,color,life,size){
+  floaters.push({x,y,text,color,life:life||0.9,t:0,size:size||16,vy:-40});
+}
+// 道具
+function spawnPower(x,y){
+  const types=['power','life'];
+  const ty = Math.random()<0.18?'life':'power';
+  powers.push({x,y,vy:90,r:14,type:ty,t:0});
+}
+
+// ===================================================================
+//  DEMO AI — 自动走位躲弹 + 对准敌群
+// ===================================================================
+function demoAI(dt){
+  if(!player) return;
+  let tx=player.x, ty=player.y;
+  // 1) 躲避:对附近敌弹做斥力
+  let fx=0, fy=0, danger=0;
+  const sense=150;
+  for(const b of eBullets){
+    const dx=player.x-b.x, dy=player.y-b.y;
+    const d=Math.hypot(dx,dy);
+    if(d<sense && d>0.1){
+      // 预测:子弹是否朝向自己
+      const ahead = (b.vx*(-dx)+b.vy*(-dy));
+      const w = (sense-d)/sense;
+      const ww = w*w*(ahead>0?2.4:0.8);
+      fx += (dx/d)*ww; fy += (dy/d)*ww;
+      danger += ww;
+    }
+  }
+  // 躲避敌机本体
+  for(const e of enemies){
+    const dx=player.x-e.x, dy=player.y-e.y, d=Math.hypot(dx,dy);
+    if(d<e.r+70 && d>0.1){ const w=(e.r+70-d)/(e.r+70); fx+=(dx/d)*w*1.6; fy+=(dy/d)*w*1.6; danger+=w; }
+  }
+  // 2) 对准:选最近上方敌人横向对齐
+  let target=null, best=1e9;
+  for(const e of enemies){
+    if(e.y>player.y-40) continue;
+    const dd=dist2(e.x,e.y,player.x,player.y);
+    if(dd<best){best=dd;target=e;}
+  }
+  // 拾取道具
+  let pw=null, pbest=1e9;
+  for(const p of powers){ const dd=dist2(p.x,p.y,player.x,player.y); if(dd<pbest){pbest=dd;pw=p;} }
+
+  if(danger>0.6){
+    // 危险:优先躲避
+    tx = player.x + fx*60;
+    ty = player.y + fy*60;
+  } else {
+    // 安全:对准敌人 / 拾道具
+    if(pw && pbest<260*260){ tx=pw.x; ty=Math.max(player.y, H*0.62); }
+    else if(target){ tx=target.x + Math.sin(gameTime*2)*8; ty=H*(0.7+0.06*Math.sin(gameTime)); }
+    else { tx=W/2; ty=H*0.74; }
+    // 叠加轻微躲避保持安全
+    tx += fx*22; ty += fy*22;
+  }
+  // 保持在下半区
+  ty = clamp(ty, H*0.42, H*0.92);
+  tx = clamp(tx, 30, W-30);
+  // 平滑移动到目标
+  const mvx = clamp((tx-player.x)*6, -player.speed, player.speed);
+  const mvy = clamp((ty-player.y)*6, -player.speed, player.speed);
+  player.x += mvx*dt; player.y += mvy*dt;
+  player.x=clamp(player.x,player.r,W-player.r);
+  player.y=clamp(player.y,player.r,H-player.r);
+}
+
+// ===================================================================
+//  UPDATE
+// ===================================================================
+function update(dt){
+  try{
+    gameTime+=dt;
+    if(shake>0) shake=Math.max(0,shake-dt*60);
+    if(hitFlash>0) hitFlash=Math.max(0,hitFlash-dt*3);
+    // 背景星点
+    for(const s of stars){ s.y+=s.z*120*dt; if(s.y>H){s.y=-2;s.x=rand(0,W);} }
+
+    if(state!=='play'){ updateParticles(dt); return; }
+
+    // --- 玩家移动 ---
+    if(invuln>0) invuln-=dt;
+    if(DEMO){
+      demoAI(dt);
+    }else{
+      let mx=0,my=0;
+      if(keys['a']||keys['arrowleft'])mx-=1;
+      if(keys['d']||keys['arrowright'])mx+=1;
+      if(keys['w']||keys['arrowup'])my-=1;
+      if(keys['s']||keys['arrowdown'])my+=1;
+      if(mx||my){ const l=Math.hypot(mx,my); mx/=l;my/=l;
+        player.x+=mx*player.speed*dt; player.y+=my*player.speed*dt; }
+      if(pointer.active){
+        player.x += (pointer.x-player.x)*Math.min(1,dt*14);
+        player.y += (pointer.y-player.y)*Math.min(1,dt*14);
+      }
+      player.x=clamp(player.x,player.r,W-player.r);
+      player.y=clamp(player.y,player.r,H-player.r);
+    }
+    player.t+=dt;
+
+    // --- 自动开火 ---
+    player.fireCd-=dt;
+    if(player.fireCd<=0){
+      player.fireCd = 0.10;
+      const pw=player.power;
+      Audio.sfx.shoot();
+      if(pw>=1) pBullet(player.x, player.y-player.r, 0, -640);
+      if(pw>=2){ pBullet(player.x-9, player.y-8, -40, -620); pBullet(player.x+9, player.y-8, 40, -620); }
+      if(pw>=3){ pBullet(player.x-16, player.y, -120, -560); pBullet(player.x+16, player.y, 120, -560); }
+      if(pw>=4){ pBullet(player.x, player.y-player.r, 0, -700); }
+    }
+
+    // --- 玩家子弹 ---
+    for(const b of pBullets){ b.x+=b.vx*dt; b.y+=b.vy*dt; }
+    pBullets=pBullets.filter(b=>b.y>-20 && b.x>-20 && b.x<W+20);
+
+    // --- 波次生成 ---
+    if(enemies.length===0 && !bossActive){
+      waveTimer-=dt;
+      if(waveTimer<=0){
+        spawnWave();
+        waveEl.textContent=wave;
+        wave++;          // 推进波次(在生成后,确保只递增一次)
+        waveTimer=1.2;
+      }
+    }
+
+    // --- 敌人更新 ---
+    for(const e of enemies){
+      e.t+=dt;
+      if(e.enter>0){ e.enter=Math.max(0,e.enter-dt); }
+      // 移动
+      if(e.boss){
+        e.y += e.vy*dt;
+        if(e.y>H*0.18){ e.y=H*0.18; e.x = W/2 + Math.sin(e.t*0.7)*(W*0.32); }
+      } else {
+        e.y += e.vy*dt;
+        if(e.amp){ e.x = e.baseX + Math.sin(e.t*1.6)*e.amp; }
+        e.x=clamp(e.x,e.r,W-e.r);
+      }
+      // 开火
+      e.fireCd-=dt;
+      if(e.fireCd<=0 && e.y>0 && e.y<H*0.9){
+        fireEnemy(e);
+      }
+      // 离屏
+      if(e.y>H+60) e.dead=true;
+    }
+
+    // --- 敌弹更新 ---
+    for(const b of eBullets){ b.t+=dt; b.x+=b.vx*dt; b.y+=b.vy*dt; }
+    eBullets=eBullets.filter(b=>b.y>-30&&b.y<H+30&&b.x>-30&&b.x<W+30);
+
+    // --- 道具更新 ---
+    for(const p of powers){ p.t+=dt; p.y+=p.vy*dt; }
+    powers=powers.filter(p=>p.y<H+30);
+
+    // --- 碰撞:玩家子弹 vs 敌人 ---
+    for(const b of pBullets){
+      for(const e of enemies){
+        if(e.dead) continue;
+        if(dist2(b.x,b.y,e.x,e.y) < (e.r+b.r)*(e.r+b.r)){
+          e.hp-=1; b.y=-999; // 标记移除
+          burst(b.x,b.y,e.color,4,120);
+          Audio.sfx.hit();
+          if(e.hp<=0){
+            e.dead=true;
+            score+=e.score;
+            burst(e.x,e.y,e.color,e.boss?60:18, e.boss?360:240);
+            Audio.sfx.explode();
+            shake=e.boss?16:5;
+            addFloater(e.x,e.y,'+'+e.score, C.gold, 0.8, e.boss?26:14);
+            if(e.boss){
+              bossActive=false;
+              // boss 死 → 撒道具
+              for(let k=0;k<3;k++) spawnPower(e.x+rand(-60,60), e.y);
+              shake=22;
+            } else if(Math.random()<0.08){
+              spawnPower(e.x,e.y);
+            }
+          }
+          break;
+        }
+      }
+    }
+    pBullets=pBullets.filter(b=>b.y>-20);
+    enemies=enemies.filter(e=>!e.dead);
+
+    // --- 碰撞:敌弹 vs 玩家 ---
+    if(invuln<=0){
+      const pr=player.r*0.55; // 判定缩小,更公平
+      for(const b of eBullets){
+        if(dist2(b.x,b.y,player.x,player.y) < (pr+b.r)*(pr+b.r)){
+          playerHit(); break;
+        }
+      }
+    }
+    // --- 碰撞:敌机 vs 玩家 ---
+    if(invuln<=0){
+      for(const e of enemies){
+        if(dist2(player.x,player.y,e.x,e.y) < (player.r*0.6+e.r)*(player.r*0.6+e.r)){
+          playerHit();
+          if(!e.boss){ e.hp-=3; if(e.hp<=0){e.dead=true; burst(e.x,e.y,e.color,18);} }
+          break;
+        }
+      }
+      enemies=enemies.filter(e=>!e.dead);
+    }
+
+    // --- 碰撞:道具 vs 玩家 ---
+    for(const p of powers){
+      if(dist2(p.x,p.y,player.x,player.y) < (player.r+p.r)*(player.r+p.r)){
+        p.y=H+999;
+        Audio.sfx.power();
+        if(p.type==='life'){ lives=Math.min(6,lives+1); addFloater(player.x,player.y,'1UP',C.green,1,18); }
+        else { player.power=Math.min(4,player.power+1); addFloater(player.x,player.y,'POWER UP',C.cyan,1,16); }
+        score+=50;
+        updateHUD();
+      }
+    }
+    powers=powers.filter(p=>p.y<H+30);
+
+    // (波次推进已合并到上方生成段,避免每帧重复递增 wave)
+
+    updateParticles(dt);
+    updateHUD();
+
+  }catch(err){ /* 防一帧异常打断渲染 */ console && console.warn(err); }
+}
+
+function fireEnemy(e){
+  const w=wave;
+  const ang=Math.atan2(player.y-e.y, player.x-e.x);
+  const bs=160+w*4; // 子弹速度随难度
+  if(e.boss){
+    e.fireCd = 0.5;
+    const ph = (e.t*0.4|0)%3;
+    if(ph===0){
+      // 环形弹
+      const n=18;
+      for(let i=0;i<n;i++){ const a=i/n*TAU + e.t; eBullet(e.x,e.y, Math.cos(a)*bs*0.7, Math.sin(a)*bs*0.7, 7, C.pink); }
+    } else if(ph===1){
+      // 三向瞄准散射
+      for(let k=-2;k<=2;k++){ const a=ang+k*0.18; eBullet(e.x,e.y,Math.cos(a)*bs,Math.sin(a)*bs,7,C.magenta); }
+    } else {
+      // 旋转螺旋
+      const a=e.t*4;
+      for(let k=0;k<3;k++){ const aa=a+k*TAU/3; eBullet(e.x,e.y,Math.cos(aa)*bs*0.8,Math.sin(aa)*bs*0.8,6,C.cyan); }
+      e.fireCd=0.08;
+    }
+    return;
+  }
+  if(e.pattern==='aim'){
+    e.fireCd = rand(1.0,1.8) - Math.min(0.6,w*0.04);
+    eBullet(e.x,e.y, Math.cos(ang)*bs, Math.sin(ang)*bs, 6, e.color);
+  } else if(e.pattern==='spread'){
+    e.fireCd = rand(1.3,2.0) - Math.min(0.6,w*0.04);
+    for(let k=-1;k<=1;k++){ const a=ang+k*0.26; eBullet(e.x,e.y,Math.cos(a)*bs,Math.sin(a)*bs,6,e.color); }
+  } else if(e.pattern==='ring'){
+    e.fireCd = rand(1.6,2.4) - Math.min(0.7,w*0.05);
+    const n=8+Math.min(6,w);
+    for(let i=0;i<n;i++){ const a=i/n*TAU + e.t*0.6; eBullet(e.x,e.y,Math.cos(a)*bs*0.6,Math.sin(a)*bs*0.6,5,e.color); }
+  }
+}
+
+function playerHit(){
+  if(invuln>0) return;
+  lives--;
+  invuln=1.6;
+  shake=18; hitFlash=1;
+  burst(player.x,player.y,C.pink,30,300);
+  Audio.sfx.playerHit();
+  // 清屏附近敌弹 (喘息空间)
+  eBullets=eBullets.filter(b=>dist2(b.x,b.y,player.x,player.y) > 130*130);
+  updateHUD();
+  if(lives<=0){ gameOver(); }
+  else { player.power=Math.max(1,player.power-1); player.x=W/2; player.y=H*0.82; }
+}
+
+function updateParticles(dt){
+  for(const p of particles){
+    p.t+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92;
+  }
+  particles=particles.filter(p=>p.t<p.life);
+  for(const f of floaters){ f.t+=dt; f.y+=f.vy*dt; f.vy*=0.94; }
+  floaters=floaters.filter(f=>f.t<f.life);
+}
+
+function updateHUD(){
+  scoreEl.textContent=score;
+  let hearts=''; for(let i=0;i<lives;i++) hearts+='♥';
+  livesEl.textContent=hearts||' ';
+  if(score>hiscore){ hiscore=score; hiscoreEl.textContent=hiscore; }
+}
+
+// ===================================================================
+//  DRAW
+// ===================================================================
+function draw(){
+  try{
+    ctx.clearRect(0,0,W,H);
+    ctx.save();
+    if(shake>0){ ctx.translate(rand(-shake,shake), rand(-shake,shake)); }
+
+    drawBackground();
+
+    // 道具
+    for(const p of powers) drawPower(p);
+
+    // 敌人
+    for(const e of enemies) drawEnemy(e);
+
+    // 玩家子弹 (青色霓虹)
+    ctx.globalCompositeOperation='lighter';
+    for(const b of pBullets){
+      ctx.fillStyle=C.cyan;
+      ctx.shadowColor=C.cyan; ctx.shadowBlur=10;
+      ctx.beginPath(); ctx.ellipse(b.x,b.y,b.r*0.7,b.r*1.5,0,0,TAU); ctx.fill();
+    }
+    // 敌弹
+    for(const b of eBullets){
+      ctx.fillStyle=b.color; ctx.shadowColor=b.color; ctx.shadowBlur=12;
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,TAU); ctx.fill();
+      ctx.fillStyle='#fff'; ctx.shadowBlur=0;
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.35,0,TAU); ctx.fill();
+    }
+    // 粒子
+    for(const p of particles){
+      const a=1-p.t/p.life;
+      ctx.globalAlpha=a; ctx.fillStyle=p.color;
+      ctx.shadowColor=p.color; ctx.shadowBlur=8;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,TAU); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    ctx.shadowBlur=0;
+    ctx.globalCompositeOperation='source-over';
+
+    // 玩家
+    if(player && state==='play') drawPlayer();
+
+    // 飘字
+    for(const f of floaters){
+      const a=clamp(1-f.t/f.life,0,1);
+      ctx.globalAlpha=a;
+      ctx.font="bold "+f.size+"px 'Press Start 2P',monospace";
+      ctx.textAlign='center';
+      ctx.fillStyle=f.color; ctx.shadowColor=f.color; ctx.shadowBlur=8;
+      ctx.fillText(f.text,f.x,f.y);
+      ctx.globalAlpha=1; ctx.shadowBlur=0;
+    }
+
+    ctx.restore();
+
+    // 受击全屏红闪
+    if(hitFlash>0){
+      ctx.fillStyle='rgba(255,46,136,'+(hitFlash*0.35)+')';
+      ctx.fillRect(0,0,W,H);
+    }
+  }catch(err){ console && console.warn(err); }
+}
+
+function drawBackground(){
+  // 远处合成波网格地平线 (在 72% 处)
+  const hy=H*0.72;
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  // 太阳
+  const sunY=hy-90, sunR=80;
+  const g=ctx.createLinearGradient(0,sunY-sunR,0,sunY+sunR);
+  g.addColorStop(0,C.gold); g.addColorStop(0.5,C.pink); g.addColorStop(1,C.magenta);
+  ctx.fillStyle=g; ctx.globalAlpha=0.85;
+  ctx.beginPath(); ctx.arc(W/2,sunY,sunR,0,TAU); ctx.fill();
+  // 太阳横线条
+  ctx.globalCompositeOperation='destination-out';
+  for(let i=0;i<6;i++){ const yy=sunY+10+i*12; ctx.fillRect(W/2-sunR,yy,sunR*2,4+i); }
+  ctx.restore();
+
+  // 网格
+  ctx.save();
+  ctx.strokeStyle='rgba(94,240,255,0.35)'; ctx.lineWidth=1.5;
+  ctx.shadowColor=C.cyan; ctx.shadowBlur=6;
+  const scroll=(gameTime*0.4)%1;
+  for(let i=0;i<14;i++){
+    const t=(i+scroll)/14;
+    const yy=hy + t*t*(H-hy);
+    ctx.globalAlpha=clamp(t*1.4,0,1)*0.5;
+    ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(W,yy); ctx.stroke();
+  }
+  for(let i=-8;i<=8;i++){
+    const x0=W/2, x1=W/2+i*70;
+    ctx.globalAlpha=0.3;
+    ctx.beginPath(); ctx.moveTo(x0,hy); ctx.lineTo(W/2+i*240,H); ctx.stroke();
+  }
+  ctx.restore();
+
+  // 星点
+  ctx.save();
+  for(const s of stars){
+    if(s.y>hy) continue;
+    ctx.globalAlpha=s.z*0.8; ctx.fillStyle='#fff';
+    ctx.fillRect(s.x,s.y,s.s,s.s);
+  }
+  ctx.restore();
+}
+
+function drawPlayer(){
+  const p=player;
+  ctx.save();
+  ctx.translate(p.x,p.y);
+  // 无敌闪烁
+  if(invuln>0 && (Math.floor(p.t*20)%2===0)) ctx.globalAlpha=0.4;
+  // 引擎尾焰
+  ctx.globalCompositeOperation='lighter';
+  const fl=8+Math.sin(p.t*30)*3;
+  const fg=ctx.createLinearGradient(0,p.r,0,p.r+fl+10);
+  fg.addColorStop(0,C.cyan); fg.addColorStop(1,'rgba(94,240,255,0)');
+  ctx.fillStyle=fg;
+  ctx.beginPath(); ctx.moveTo(-5,p.r-2); ctx.lineTo(5,p.r-2); ctx.lineTo(0,p.r+fl+10); ctx.closePath(); ctx.fill();
+  ctx.globalCompositeOperation='source-over';
+  // 机身 (霓虹三角)
+  ctx.shadowColor=C.cyan; ctx.shadowBlur=14;
+  ctx.fillStyle=C.white;
+  ctx.beginPath();
+  ctx.moveTo(0,-p.r-3);
+  ctx.lineTo(-p.r,p.r);
+  ctx.lineTo(-5,p.r-4);
+  ctx.lineTo(5,p.r-4);
+  ctx.lineTo(p.r,p.r);
+  ctx.closePath(); ctx.fill();
+  // 描边
+  ctx.lineWidth=2.2; ctx.strokeStyle=C.cyan; ctx.stroke();
+  // 座舱
+  ctx.shadowBlur=0; ctx.fillStyle=C.pink;
+  ctx.beginPath(); ctx.arc(0,-2,4,0,TAU); ctx.fill();
+  ctx.restore();
+}
+
+function drawEnemy(e){
+  ctx.save();
+  ctx.translate(e.x,e.y);
+  const wob=e.enter>0?(1-e.enter):1;
+  if(e.boss){
+    // Boss:大型菱形舰体
+    const hpr=e.hp/e.maxhp;
+    ctx.shadowColor=C.pink; ctx.shadowBlur=24;
+    ctx.fillStyle='rgba(40,8,40,0.9)';
+    ctx.strokeStyle=C.pink; ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(0,e.r); ctx.lineTo(e.r,0); ctx.lineTo(e.r*0.6,-e.r*0.7);
+    ctx.lineTo(-e.r*0.6,-e.r*0.7); ctx.lineTo(-e.r,0); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // 核心
+    ctx.fillStyle=C.cyan; ctx.shadowColor=C.cyan; ctx.shadowBlur=18;
+    ctx.beginPath(); ctx.arc(0,-6,14+Math.sin(e.t*6)*3,0,TAU); ctx.fill();
+    ctx.shadowBlur=0;
+    // 血条
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(-e.r,e.r+8,e.r*2,7);
+    ctx.fillStyle = hpr>0.4?C.green:C.pink;
+    ctx.fillRect(-e.r,e.r+8,e.r*2*hpr,7);
+  } else {
+    ctx.shadowColor=e.color; ctx.shadowBlur=12;
+    ctx.fillStyle=e.color;
+    if(e.type==='weaver'){
+      // 六边
+      ctx.beginPath();
+      for(let i=0;i<6;i++){ const a=i/6*TAU+Math.PI/6; const x=Math.cos(a)*e.r, y=Math.sin(a)*e.r; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+      ctx.closePath();
+    } else {
+      // 倒三角战机
+      ctx.beginPath();
+      ctx.moveTo(0,e.r);
+      ctx.lineTo(-e.r,-e.r*0.7);
+      ctx.lineTo(0,-e.r*0.3);
+      ctx.lineTo(e.r,-e.r*0.7);
+      ctx.closePath();
+    }
+    ctx.globalAlpha=wob; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle='#fff'; ctx.globalAlpha=wob*0.8; ctx.stroke();
+    ctx.globalAlpha=1; ctx.shadowBlur=0;
+    ctx.fillStyle=C.gold;
+    ctx.beginPath(); ctx.arc(0,0,3,0,TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPower(p){
+  ctx.save();
+  ctx.translate(p.x,p.y);
+  ctx.rotate(p.t*2);
+  const col = p.type==='life'?C.green:C.cyan;
+  ctx.shadowColor=col; ctx.shadowBlur=16;
+  ctx.strokeStyle=col; ctx.lineWidth=2.5; ctx.fillStyle='rgba(10,4,24,0.7)';
+  ctx.beginPath();
+  for(let i=0;i<4;i++){ const a=i/4*TAU; const x=Math.cos(a)*p.r,y=Math.sin(a)*p.r; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.rotate(-p.t*2);
+  ctx.shadowBlur=0; ctx.fillStyle=col;
+  ctx.font="bold 12px 'Press Start 2P',monospace"; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(p.type==='life'?'+':'P',0,1);
+  ctx.restore();
+}
+
+// ===================================================================
+//  主循环
+// ===================================================================
+let last=performance.now();
+function loop(now){
+  let dt=(now-last)/1000; last=now;
+  if(dt>0.05) dt=0.05; // 限制最大步长,防卡顿穿越
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ===================================================================
+//  流程控制
+// ===================================================================
+function startGame(){
+  state='play';
+  score=0; lives=3; wave=1; gameTime=0;
+  waveTimer=0.6; bossActive=false; invuln=0; shake=0; hitFlash=0;
+  enemies=[]; pBullets=[]; eBullets=[]; particles=[]; powers=[]; floaters=[];
+  player=makePlayer();
+  initStars();
+  updateHUD();
+  startOverlay.classList.add('hidden');
+  overOverlay.classList.add('hidden');
+  Audio.start();
+}
+
+function gameOver(){
+  state='over';
+  burst(player.x,player.y,C.gold,50,360);
+  if(score>=hiscore){ hiscore=score; }
+  try{ localStorage.setItem('neonBulletHi', String(hiscore)); }catch(e){}
+  finalScoreEl.textContent=score;
+  finalHiEl.textContent=hiscore;
+  hiscoreEl.textContent=hiscore;
+  overOverlay.classList.remove('hidden');
+  // demo 模式:自动重开,保证整段有内容
+  if(DEMO){
+    setTimeout(()=>{ if(state==='over') startGame(); }, 1600);
+  }
+}
+
+startBtn.addEventListener('click', ()=>{ startGame(); });
+retryBtn.addEventListener('click', ()=>{ startGame(); });
+muteBtn.addEventListener('click', ()=>{
+  if(!Audio.isStarted()) Audio.start();
+  const m=Audio.toggleMute();
+  muteBtn.textContent = m?'♪ OFF':'♪ ON';
+});
+
+// ===================================================================
+//  自适应:仅在尺寸真正变化时调整 (录制期间不清空)
+// ===================================================================
+function resize(){
+  const stage=document.getElementById('stage');
+  const r=stage.getBoundingClientRect();
+  // canvas 内部分辨率固定为 W×H,只靠 CSS 缩放,避免重设 width/height 清空画布
+  // 这里仅在确实需要时同步 (本实现固定逻辑分辨率,无需改 canvas.width)
+}
+window.addEventListener('resize', resize);
+resize();
+
+// 启动主循环
+requestAnimationFrame(loop);
+
+// ===================================================================
+//  DEMO / RECORD
+// ===================================================================
+if(DEMO){
+  // 免手势直接开局
+  setTimeout(()=>{ Audio.start(); startGame(); }, 200);
+}
+
+if(RECORD_SEC>0){
+  // 等待开局与画面稳定后录制
+  setTimeout(()=>{
+    try{
+      const cv=canvas;
+      // 确认 canvas 尺寸有效
+      if(!cv.width || !cv.height){ return; }
+      const stream=cv.captureStream(30);
+      if(!stream || stream.getVideoTracks().length===0){ return; }
+      let mt='video/webm;codecs=vp9';
+      if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+      const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+      const chunks=[];
+      mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+      mr.onstop=()=>{
+        const b=new Blob(chunks,{type:'video/webm'});
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(b);
+        a.download='neon-bullet.webm';
+        document.body.appendChild(a);
+        try{a.click()}catch(e){}
+      };
+      mr.start(250);
+      setTimeout(()=>{ try{mr.stop()}catch(e){} }, RECORD_SEC*1000);
+    }catch(e){ console && console.warn('record fail',e); }
+  }, 700);
+}
+</script>
+</body>
+</html>

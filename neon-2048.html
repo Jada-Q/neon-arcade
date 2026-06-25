@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON 2048 — OutRun</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 全局基础样式 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8; --gold:#ffd95e; --green:#5effa0;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{width:100%; height:100%; overflow:hidden;}
+  body{
+    /* 日落渐变背景 */
+    background:linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+    font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    position:relative; touch-action:none; user-select:none;
+  }
+  /* CRT 扫描线覆盖 */
+  #crt{
+    position:fixed; inset:0; pointer-events:none; z-index:50;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,0.14) 0px, rgba(0,0,0,0.14) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode:multiply; opacity:.55;
+  }
+  #wrap{
+    position:relative; display:flex; flex-direction:column; align-items:center;
+    gap:14px; padding:14px; z-index:2;
+  }
+  /* HUD 区 */
+  #hud{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    width:100%; gap:10px;
+  }
+  .title{
+    font-family:'Press Start 2P',monospace; font-size:20px; line-height:1.4;
+    color:var(--cyan);
+    text-shadow:0 0 8px var(--cyan), 3px 3px 0 var(--pink);
+    letter-spacing:1px;
+  }
+  .boxes{display:flex; gap:10px;}
+  .stat{
+    font-family:'Press Start 2P',monospace; font-size:10px;
+    background:rgba(22,10,54,.55); border:2px solid var(--magenta);
+    box-shadow:4px 4px 0 var(--pink); padding:6px 10px; min-width:78px;
+    text-align:center; border-radius:4px;
+  }
+  .stat .lbl{color:var(--gold); font-size:8px; display:block; margin-bottom:5px;}
+  .stat .val{color:#fff; text-shadow:0 0 6px var(--cyan);}
+  /* 画布容器 */
+  #stage{position:relative;}
+  canvas{
+    display:block; border:3px solid var(--cyan);
+    box-shadow:4px 4px 0 var(--pink), 0 0 22px rgba(94,240,255,.4);
+    background:rgba(12,6,30,.55); border-radius:6px; touch-action:none;
+  }
+  /* 控制按钮 */
+  #ctrls{display:flex; gap:10px; flex-wrap:wrap; justify-content:center;}
+  button.nb{
+    font-family:'Press Start 2P',monospace; font-size:9px; color:#fff;
+    background:rgba(22,10,54,.7); border:2px solid var(--cyan);
+    box-shadow:4px 4px 0 var(--pink); padding:9px 12px; cursor:pointer;
+    border-radius:4px; transition:transform .05s;
+  }
+  button.nb:active{transform:translate(2px,2px); box-shadow:2px 2px 0 var(--pink);}
+  /* 遮罩 */
+  .mask{
+    position:absolute; inset:0; z-index:30; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px; text-align:center;
+    background:rgba(8,4,22,.78); border-radius:6px; padding:20px;
+    backdrop-filter:blur(2px);
+  }
+  .mask.hidden{display:none;}
+  .mask h1{
+    font-family:'Press Start 2P',monospace; font-size:22px; color:var(--pink);
+    text-shadow:0 0 10px var(--pink), 3px 3px 0 var(--cyan); line-height:1.5;
+  }
+  .mask h1.win{color:var(--green); text-shadow:0 0 10px var(--green),3px 3px 0 var(--magenta);}
+  .mask p{font-size:15px; color:var(--cyan); max-width:340px; line-height:1.6;}
+  .mask .sub{font-size:12px; color:var(--gold);}
+  @media (max-width:520px){
+    .title{font-size:14px;} .mask h1{font-size:16px;}
+  }
+</style>
+</head>
+<body>
+<div id="crt"></div>
+<div id="wrap">
+  <div id="hud">
+    <div class="title">NEON<br>2048</div>
+    <div class="boxes">
+      <div class="stat"><span class="lbl">SCORE</span><span class="val" id="scoreEl">0</span></div>
+      <div class="stat"><span class="lbl">BEST</span><span class="val" id="bestEl">0</span></div>
+    </div>
+  </div>
+  <div id="stage">
+    <canvas id="game" width="460" height="460"></canvas>
+    <!-- 开始遮罩 -->
+    <div class="mask" id="startMask">
+      <h1>NEON 2048</h1>
+      <p>方向键 / WASD 或 滑动 移动方块<br>相同数字相撞合并翻倍<br>凑出 2048 获胜</p>
+      <button class="nb" id="startBtn">PRESS START</button>
+    </div>
+    <!-- 结束遮罩 -->
+    <div class="mask hidden" id="overMask">
+      <h1 id="overTitle">GAME OVER</h1>
+      <p class="sub" id="overSub"></p>
+      <button class="nb" id="againBtn">RETRY</button>
+    </div>
+  </div>
+  <div id="ctrls">
+    <button class="nb" id="muteBtn">SOUND: ON</button>
+    <button class="nb" id="demoBtn">AI DEMO</button>
+    <button class="nb" id="newBtn">NEW GAME</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   NEON 2048 — 合成波 OutRun 风格 / 单文件 / 原生 Canvas 2D
+   - 4x4 网格, 滑动合并, 生成 2/4, 2048 胜利可继续, 填满无法移动 GAME OVER
+   - AI 演示: 固定优先级启发 + 大数维持角落
+   - ?demo 自动开局演示; ?record=N 录制 webm
+   ========================================================================= */
+(function(){
+
+/* ---------- DOM 引用 ---------- */
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const scoreEl = document.getElementById('scoreEl');
+const bestEl  = document.getElementById('bestEl');
+const startMask = document.getElementById('startMask');
+const overMask  = document.getElementById('overMask');
+const overTitle = document.getElementById('overTitle');
+const overSub   = document.getElementById('overSub');
+const muteBtn   = document.getElementById('muteBtn');
+
+/* ---------- URL 参数 ---------- */
+const params = new URLSearchParams(location.search);
+const DEMO_PARAM   = params.has('demo');
+const RECORD_SECS  = params.has('record') ? Math.max(1, parseInt(params.get('record'),10)||15) : 0;
+
+/* ---------- 游戏常量 ---------- */
+const N = 4;                 // 网格尺寸
+const ANIM_MS = 110;         // 滑动/合并动画时长
+let CELL = 100, GAP = 14, PAD = 14; // 由 resize 计算
+
+/* ---------- 霓虹配色: 每个数字对应一种颜色 ---------- */
+const TILE_COLORS = {
+  2:    {bg:'#241a4d', fg:'#5ef0ff', glow:'#5ef0ff'},
+  4:    {bg:'#2a1450', fg:'#5effa0', glow:'#5effa0'},
+  8:    {bg:'#3a1457', fg:'#ffd95e', glow:'#ffd95e'},
+  16:   {bg:'#4a1a55', fg:'#ff9a4d', glow:'#ff9a4d'},
+  32:   {bg:'#5e1a55', fg:'#ff5ec8', glow:'#ff5ec8'},
+  64:   {bg:'#7a2a6e', fg:'#ff2e88', glow:'#ff2e88'},
+  128:  {bg:'#5e2a7a', fg:'#5ef0ff', glow:'#5ef0ff'},
+  256:  {bg:'#3a2a8a', fg:'#5effa0', glow:'#5effa0'},
+  512:  {bg:'#7a2a9a', fg:'#ffd95e', glow:'#ffd95e'},
+  1024: {bg:'#9a2a8a', fg:'#ff5ec8', glow:'#ff5ec8'},
+  2048: {bg:'#ff2e88', fg:'#160a36', glow:'#ff2e88'},
+  4096: {bg:'#5ef0ff', fg:'#160a36', glow:'#5ef0ff'},
+  8192: {bg:'#5effa0', fg:'#160a36', glow:'#5effa0'}
+};
+function colorFor(v){
+  return TILE_COLORS[v] || {bg:'#ffd95e', fg:'#160a36', glow:'#ffd95e'};
+}
+
+/* =========================================================================
+   音频: Web Audio 程序化音效 + 合成波循环配乐
+   ========================================================================= */
+const Audio2048 = (function(){
+  let actx=null, master=null, musicGain=null, sfxGain=null;
+  let muted=false, musicTimer=null, started=false;
+
+  function ensure(){
+    if(actx) return;
+    try{
+      actx = new (window.AudioContext||window.webkitAudioContext)();
+      master = actx.createGain(); master.gain.value=0.9; master.connect(actx.destination);
+      musicGain = actx.createGain(); musicGain.gain.value=0.18; musicGain.connect(master);
+      sfxGain = actx.createGain(); sfxGain.gain.value=0.5; sfxGain.connect(master);
+    }catch(e){ /* 音频不可用则静默 */ }
+  }
+  function resume(){
+    ensure();
+    if(actx && actx.state==='suspended'){ actx.resume().catch(()=>{}); }
+  }
+  // 简易合成音
+  function blip(freq, dur, type, gain, target){
+    if(!actx||muted) return;
+    try{
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type=type||'square'; o.frequency.value=freq;
+      g.gain.setValueAtTime(0.0001, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(gain||0.4, actx.currentTime+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur);
+      o.connect(g); g.connect(target||sfxGain);
+      o.start(); o.stop(actx.currentTime+dur+0.02);
+    }catch(e){}
+  }
+  // 合并音: 随数值升高
+  function merge(level){
+    const base = 220 * Math.pow(1.122, Math.min(level,12));
+    blip(base, 0.12, 'square', 0.45);
+    blip(base*1.5, 0.10, 'triangle', 0.25);
+  }
+  function move(){ blip(160, 0.05, 'sawtooth', 0.18); }
+  function spawn(){ blip(520, 0.06, 'sine', 0.2); }
+  function win(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>blip(f,0.18,'triangle',0.4),i*110)); }
+  function over(){ [330,247,196,147].forEach((f,i)=>setTimeout(()=>blip(f,0.22,'sawtooth',0.4),i*130)); }
+
+  /* --- 合成波循环配乐: 低音 + 琶音 --- */
+  const bass = [55,55,82.4,73.4]; // A1 A1 E2 D2
+  const arp  = [220,277,330,440,330,277]; // A C# E A E C#
+  let step=0;
+  function tick(){
+    if(!actx||muted) return;
+    const t=actx.currentTime;
+    // 低音 pad
+    if(step%4===0){
+      const bi=(step/4)%bass.length;
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type='sawtooth'; o.frequency.value=bass[bi];
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.linearRampToValueAtTime(0.5,t+0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.9);
+      o.connect(g); g.connect(musicGain); o.start(); o.stop(t+0.95);
+    }
+    // 琶音
+    const ai=step%arp.length;
+    const o2=actx.createOscillator(), g2=actx.createGain();
+    o2.type='square'; o2.frequency.value=arp[ai];
+    g2.gain.setValueAtTime(0.0001,t);
+    g2.gain.linearRampToValueAtTime(0.22,t+0.02);
+    g2.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+    o2.connect(g2); g2.connect(musicGain); o2.start(); o2.stop(t+0.25);
+    step++;
+  }
+  function startMusic(){
+    if(!actx||musicTimer) return;
+    musicTimer=setInterval(tick, 200); // ~150bpm 16ths
+  }
+  function setMuted(m){
+    muted=m;
+    if(master) master.gain.value = m?0:0.9;
+  }
+  return {
+    resume, merge, move, spawn, win, over, startMusic,
+    setMuted, isMuted:()=>muted,
+    ensure
+  };
+})();
+
+/* =========================================================================
+   游戏状态
+   ========================================================================= */
+let grid=[];          // N*N, 每格 null 或 {v, id}
+let score=0;
+let best=Number(localStorage.getItem('neon2048_best')||0);
+let nextId=1;
+let won=false;        // 已达成 2048
+let gameOver=false;
+let running=false;    // 是否在玩(已开局)
+let aiOn=false;       // AI 演示开关
+
+let anims=[];         // 当前进行的滑动动画 {fromR,fromC,toR,toC,v,id,merged,pop}
+let popAnims=[];      // 新生成方块的弹出动画 {r,c,v,t}
+let animating=false;
+let animStart=0;
+
+bestEl.textContent = best;
+
+/* ---------- 网格工具 ---------- */
+function emptyGrid(){ const g=[]; for(let r=0;r<N;r++){ g.push([]); for(let c=0;c<N;c++) g[r].push(null);} return g; }
+function emptyCells(g){ const out=[]; for(let r=0;r<N;r++)for(let c=0;c<N;c++) if(!g[r][c]) out.push([r,c]); return out; }
+function spawnTile(g, pop){
+  const cells=emptyCells(g);
+  if(!cells.length) return false;
+  const [r,c]=cells[(Math.random()*cells.length)|0];
+  const v = Math.random()<0.9?2:4;
+  g[r][c]={v, id:nextId++};
+  if(pop) popAnims.push({r,c,v,t:0});
+  return true;
+}
+
+/* ---------- 初始化新局 ---------- */
+function newGame(){
+  grid=emptyGrid(); score=0; won=false; gameOver=false; nextId=1;
+  anims=[]; popAnims=[]; animating=false;
+  spawnTile(grid,true); spawnTile(grid,true);
+  running=true;
+  updateScore(0);
+  overMask.classList.add('hidden');
+  startMask.classList.add('hidden');
+}
+
+function updateScore(add){
+  score+=add;
+  scoreEl.textContent=score;
+  if(score>best){ best=score; bestEl.textContent=best; localStorage.setItem('neon2048_best',best); }
+}
+
+/* =========================================================================
+   移动逻辑
+   dir: 0=up,1=right,2=down,3=left
+   返回 {moved, gained, mergedLevels, animList}
+   ========================================================================= */
+// 取出某一行/列(按移动方向归一为向左处理)
+function lineFor(g, dir, idx){
+  // 返回坐标列表(从"前端"到"后端"), 前端为方块要滑去的方向
+  const coords=[];
+  if(dir===3){ for(let c=0;c<N;c++) coords.push([idx,c]); }          // left: row idx, c 0..N
+  else if(dir===1){ for(let c=N-1;c>=0;c--) coords.push([idx,c]); }  // right: 反向
+  else if(dir===0){ for(let r=0;r<N;r++) coords.push([r,idx]); }     // up: col idx
+  else { for(let r=N-1;r>=0;r--) coords.push([r,idx]); }             // down: 反向
+  return coords;
+}
+
+function move(dir, applyEffects){
+  const newGrid=emptyGrid();
+  let moved=false, gained=0;
+  const animList=[]; const mergedLevels=[];
+
+  for(let idx=0; idx<N; idx++){
+    const coords = lineFor(grid, dir, idx);
+    // 收集非空 tile (保持顺序)
+    const tiles=[];
+    for(const [r,c] of coords){ if(grid[r][c]) tiles.push({r,c,...grid[r][c]}); }
+    // 合并
+    const result=[]; // 每项 {v, sources:[{r,c,id},...], merged:bool}
+    let i=0;
+    while(i<tiles.length){
+      if(i+1<tiles.length && tiles[i].v===tiles[i+1].v){
+        result.push({v:tiles[i].v*2, sources:[tiles[i],tiles[i+1]], merged:true});
+        i+=2;
+      }else{
+        result.push({v:tiles[i].v, sources:[tiles[i]], merged:false});
+        i++;
+      }
+    }
+    // 写回 newGrid, 目标位置为 coords[k]
+    for(let k=0;k<result.length;k++){
+      const [tr,tc]=coords[k];
+      const cell=result[k];
+      const id = cell.sources[0].id;
+      newGrid[tr][tc]={v:cell.v, id};
+      // 动画: 每个源 tile 滑到目标
+      for(const s of cell.sources){
+        if(s.r!==tr || s.c!==tc) moved=true;
+        animList.push({fromR:s.r, fromC:s.c, toR:tr, toC:tc, v:s.v,
+                       merged:cell.merged, finalV:cell.v});
+      }
+      if(cell.merged){
+        gained+=cell.v;
+        mergedLevels.push(Math.log2(cell.v));
+      }
+    }
+  }
+
+  if(applyEffects){
+    return {newGrid, moved, gained, mergedLevels, animList};
+  }
+  return {moved}; // 仅探测
+}
+
+/* ---------- 是否还能移动 ---------- */
+function canMoveAny(){
+  if(emptyCells(grid).length) return true;
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    const v=grid[r][c].v;
+    if(c+1<N && grid[r][c+1] && grid[r][c+1].v===v) return true;
+    if(r+1<N && grid[r+1][c] && grid[r+1][c].v===v) return true;
+  }
+  return false;
+}
+
+/* ---------- 执行一次移动(含动画启动) ---------- */
+function doMove(dir){
+  if(!running || gameOver || animating) return false;
+  const res = move(dir, true);
+  if(!res.moved){ return false; }
+
+  // 启动滑动动画
+  anims = res.animList;
+  animating=true; animStart=performance.now();
+  Audio2048.move();
+
+  // 暂存待提交的新网格 & 效果
+  pending = {newGrid:res.newGrid, gained:res.gained, mergedLevels:res.mergedLevels};
+  return true;
+}
+let pending=null;
+
+/* ---------- 动画结束后提交 ---------- */
+function commitMove(){
+  if(!pending) return;
+  grid = pending.newGrid;
+  if(pending.gained>0) updateScore(pending.gained);
+  // 合并音效 + 弹出
+  if(pending.mergedLevels.length){
+    let maxLvl=0;
+    pending.mergedLevels.forEach(l=>{ maxLvl=Math.max(maxLvl,l); });
+    Audio2048.merge(maxLvl);
+  }
+  // 标记合并的方块做 pop 动画
+  for(const a of anims){
+    if(a.merged){ popAnims.push({r:a.toR,c:a.toC,v:a.finalV,t:0,merge:true}); }
+  }
+  // 检查胜利
+  if(!won){
+    for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+      if(grid[r][c] && grid[r][c].v>=2048){ won=true; }
+    }
+    if(won){ Audio2048.win(); showWin(); }
+  }
+  // 生成新方块
+  spawnTile(grid,true);
+  Audio2048.spawn();
+  anims=[]; pending=null; animating=false;
+
+  // 检查 game over
+  if(!canMoveAny()){
+    gameOver=true; running=false;
+    Audio2048.over();
+    showOver(false);
+  }
+}
+
+/* =========================================================================
+   AI 演示: 启发式选择方向
+   策略: 固定优先级(下>左>右>上)维持大数在左下角; 用前瞻评分选最优有效方向
+   ========================================================================= */
+function evalGrid(g){
+  // 启发评分: 空格数 + 平滑度 + 角落大数 + 单调性
+  let empty=0, score=0;
+  const vals=[];
+  for(let r=0;r<N;r++){ vals.push([]); for(let c=0;c<N;c++){
+    const v=g[r][c]?g[r][c].v:0; vals[r].push(v);
+    if(v===0) empty++;
+  }}
+  score += empty*270; // 鼓励留空
+  // 角落权重(左下角放大数)
+  const W=[
+    [4,5,6,7],
+    [3,4,5,6],
+    [2,3,4,5],
+    [1,2,3,4]
+  ];
+  // 使用左下角为最重: 翻转权重让 (N-1,0) 最大
+  const Wlb=[
+    [ 7, 6, 5, 4],
+    [ 8, 7, 6, 5],
+    [ 9, 8, 7, 6],
+    [16,12, 8, 6]
+  ];
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    score += vals[r][c]*Wlb[r][c];
+  }
+  // 平滑度: 相邻差值惩罚
+  let smooth=0;
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    if(c+1<N) smooth -= Math.abs(vals[r][c]-vals[r][c+1]);
+    if(r+1<N) smooth -= Math.abs(vals[r][c]-vals[r+1][c]);
+  }
+  score += smooth*1.5;
+  return score;
+}
+
+function simulate(dir){
+  // 在 grid 副本上跑一次 move 逻辑, 返回 {moved, newGrid, gained}
+  const save=grid;
+  // 复制
+  const g2=emptyGrid();
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++) if(save[r][c]) g2[r][c]={...save[r][c]};
+  grid=g2;
+  const res=move(dir,true);
+  grid=save;
+  return res;
+}
+
+function aiChooseDir(){
+  // 优先级 + 评分: 下(2)、左(3)、右(1)、上(0)
+  const order=[2,3,1,0];
+  let bestDir=-1, bestScore=-Infinity;
+  for(const d of order){
+    const res=simulate(d);
+    if(!res.moved) continue;
+    let sc=evalGrid(res.newGrid)+res.gained*0.9;
+    // 给优先方向轻微加权,使其偏好下/左, 维持角落
+    sc += (d===2?40:d===3?30:d===1?5:0);
+    if(sc>bestScore){ bestScore=sc; bestDir=d; }
+  }
+  return bestDir; // -1 表示无有效移动
+}
+
+let aiTimer=0;
+const AI_INTERVAL=140; // ms 每步
+function aiStep(now){
+  if(!aiOn || !running || animating || gameOver) return;
+  if(now-aiTimer < AI_INTERVAL) return;
+  aiTimer=now;
+  const d=aiChooseDir();
+  if(d>=0){ doMove(d); }
+}
+
+/* =========================================================================
+   渲染
+   ========================================================================= */
+function cellXY(r,c){ return [PAD + c*(CELL+GAP), PAD + r*(CELL+GAP)]; }
+
+function roundRect(x,y,w,h,rad){
+  ctx.beginPath();
+  ctx.moveTo(x+rad,y);
+  ctx.arcTo(x+w,y,x+w,y+h,rad);
+  ctx.arcTo(x+w,y+h,x,y+h,rad);
+  ctx.arcTo(x,y+h,x,y,rad);
+  ctx.arcTo(x,y,x+w,y,rad);
+  ctx.closePath();
+}
+
+function drawTileFace(x,y,v,scale){
+  const col=colorFor(v);
+  const s=CELL*(scale||1);
+  const off=(CELL-s)/2;
+  ctx.save();
+  // 发光
+  ctx.shadowColor=col.glow; ctx.shadowBlur=14;
+  ctx.fillStyle=col.bg;
+  roundRect(x+off,y+off,s,s,8); ctx.fill();
+  // 霓虹边
+  ctx.shadowBlur=0;
+  ctx.lineWidth=2; ctx.strokeStyle=col.glow;
+  roundRect(x+off,y+off,s,s,8); ctx.stroke();
+  // 数字
+  ctx.shadowColor=col.glow; ctx.shadowBlur=8;
+  ctx.fillStyle=col.fg;
+  const digits=(''+v).length;
+  let fs = CELL*0.30;
+  if(digits>=4) fs=CELL*0.20; else if(digits===3) fs=CELL*0.25;
+  fs*=(scale||1);
+  ctx.font=`${fs}px 'Press Start 2P', monospace`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(v, x+CELL/2, y+CELL/2+1);
+  ctx.restore();
+}
+
+let gridFlash=0;
+function draw(){
+  // 背板
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // 棋盘底框
+  ctx.save();
+  ctx.fillStyle='rgba(22,10,54,0.45)';
+  roundRect(PAD-8,PAD-8,N*CELL+(N-1)*GAP+16,N*CELL+(N-1)*GAP+16,10);
+  ctx.fill();
+  ctx.restore();
+
+  // 空格底
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    const [x,y]=cellXY(r,c);
+    ctx.save();
+    ctx.fillStyle='rgba(94,240,255,0.06)';
+    ctx.strokeStyle='rgba(255,46,136,0.25)';
+    ctx.lineWidth=1.5;
+    roundRect(x,y,CELL,CELL,8); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  const t = animating ? Math.min(1,(performance.now()-animStart)/ANIM_MS) : 1;
+  const ease = 1-Math.pow(1-t,3); // easeOutCubic
+
+  if(animating){
+    // 绘制滑动中的方块
+    for(const a of anims){
+      const [fx,fy]=cellXY(a.fromR,a.fromC);
+      const [tx,ty]=cellXY(a.toR,a.toC);
+      const x=fx+(tx-fx)*ease, y=fy+(ty-fy)*ease;
+      drawTileFace(x,y,a.v,1);
+    }
+  }else{
+    // 静态绘制 grid
+    for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+      if(grid[r][c]){
+        const [x,y]=cellXY(r,c);
+        // pop 缩放
+        let scale=1;
+        const pa=popAnims.find(p=>p.r===r&&p.c===c);
+        if(pa){
+          const pt=Math.min(1,pa.t/120);
+          scale = pa.merge ? 1+0.18*Math.sin(pt*Math.PI) : 0.3+0.7*pt;
+        }
+        drawTileFace(x,y,grid[r][c].v,scale);
+      }
+    }
+  }
+}
+
+/* =========================================================================
+   主循环 (rAF + delta)
+   ========================================================================= */
+let lastT=performance.now();
+function loop(now){
+  const dt=now-lastT; lastT=now;
+
+  // update
+  try{
+    // 动画推进
+    if(animating){
+      const t=(now-animStart)/ANIM_MS;
+      if(t>=1){ commitMove(); }
+    }
+    // pop 动画推进
+    for(const p of popAnims){ p.t+=dt; }
+    popAnims = popAnims.filter(p=>p.t<160);
+    // AI
+    aiStep(now);
+  }catch(e){ /* update 容错 */ console.warn('update',e); }
+
+  // draw
+  try{ draw(); }catch(e){ console.warn('draw',e); }
+
+  requestAnimationFrame(loop);
+}
+
+/* =========================================================================
+   遮罩 / UI
+   ========================================================================= */
+function showOver(isWin){
+  overMask.classList.remove('hidden');
+  if(isWin){
+    overTitle.textContent='YOU WIN!';
+    overTitle.classList.add('win');
+    overSub.textContent='达成 2048 — 可继续冲分';
+  }else{
+    overTitle.textContent='GAME OVER';
+    overTitle.classList.remove('win');
+    overSub.textContent='得分 '+score+' / 最高 '+best;
+    // 规整按钮文案: 即使先前胜利显示过 CONTINUE, 真正结束时应为 RETRY
+    const btn=document.getElementById('againBtn');
+    if(btn) btn.textContent='RETRY';
+  }
+}
+let winShown=false;
+function showWin(){
+  // 胜利后给出提示但不强制结束(可继续); 暂停棋盘直到玩家点 CONTINUE, 避免遮罩后继续被操作
+  if(winShown) return; winShown=true;
+  running=false;
+  overMask.classList.remove('hidden');
+  overTitle.textContent='2048!';
+  overTitle.classList.add('win');
+  overSub.textContent='霓虹胜利 — 点 CONTINUE 继续';
+  const btn=document.getElementById('againBtn');
+  btn.textContent='CONTINUE';
+}
+
+/* =========================================================================
+   输入处理
+   ========================================================================= */
+function startGameUserGesture(){
+  Audio2048.resume();
+  Audio2048.startMusic();
+}
+
+document.getElementById('startBtn').addEventListener('click',()=>{
+  startGameUserGesture(); newGame();
+});
+document.getElementById('newBtn').addEventListener('click',()=>{
+  startGameUserGesture(); aiOff(); winShown=false;
+  document.getElementById('againBtn').textContent='RETRY';
+  newGame();
+});
+document.getElementById('againBtn').addEventListener('click',()=>{
+  // 若是胜利状态的 CONTINUE
+  if(won && !gameOver){
+    overMask.classList.add('hidden');
+    running=true;
+    return;
+  }
+  startGameUserGesture(); winShown=false;
+  document.getElementById('againBtn').textContent='RETRY';
+  newGame();
+});
+document.getElementById('demoBtn').addEventListener('click',()=>{
+  startGameUserGesture();
+  if(!running||gameOver){ winShown=false; newGame(); }
+  aiOn=!aiOn;
+  document.getElementById('demoBtn').textContent = aiOn?'AI: ON':'AI DEMO';
+});
+function aiOff(){ aiOn=false; document.getElementById('demoBtn').textContent='AI DEMO'; }
+
+muteBtn.addEventListener('click',()=>{
+  const m=!Audio2048.isMuted();
+  Audio2048.setMuted(m);
+  muteBtn.textContent = m?'SOUND: OFF':'SOUND: ON';
+});
+
+// 键盘
+const KEYMAP={
+  'ArrowUp':0,'ArrowRight':1,'ArrowDown':2,'ArrowLeft':3,
+  'w':0,'d':1,'s':2,'a':3,'W':0,'D':1,'S':2,'A':3
+};
+window.addEventListener('keydown',(e)=>{
+  if(e.key in KEYMAP){
+    e.preventDefault();
+    if(!running && !gameOver){ startGameUserGesture(); newGame(); }
+    aiOff();
+    doMove(KEYMAP[e.key]);
+  }
+});
+
+// 触屏滑动
+let tsx=0,tsy=0,touching=false;
+cv.addEventListener('touchstart',(e)=>{
+  startGameUserGesture();
+  if(!running && !gameOver){ newGame(); }
+  const t=e.touches[0]; tsx=t.clientX; tsy=t.clientY; touching=true;
+},{passive:true});
+cv.addEventListener('touchend',(e)=>{
+  if(!touching) return; touching=false;
+  const t=e.changedTouches[0];
+  const dx=t.clientX-tsx, dy=t.clientY-tsy;
+  if(Math.abs(dx)<20 && Math.abs(dy)<20) return;
+  aiOff();
+  if(Math.abs(dx)>Math.abs(dy)) doMove(dx>0?1:3);
+  else doMove(dy>0?2:0);
+},{passive:true});
+// 鼠标拖拽(桌面也能滑)
+let msx=0,msy=0,mdown=false;
+cv.addEventListener('mousedown',(e)=>{ startGameUserGesture(); msx=e.clientX; msy=e.clientY; mdown=true; });
+window.addEventListener('mouseup',(e)=>{
+  if(!mdown) return; mdown=false;
+  const dx=e.clientX-msx, dy=e.clientY-msy;
+  if(Math.abs(dx)<24 && Math.abs(dy)<24) return;
+  if(!running && !gameOver){ newGame(); }
+  aiOff();
+  if(Math.abs(dx)>Math.abs(dy)) doMove(dx>0?1:3);
+  else doMove(dy>0?2:0);
+});
+
+/* =========================================================================
+   自适应 resize: 仅在尺寸真正变化时重设(录制期间避免清画布)
+   ========================================================================= */
+function computeSize(){
+  // 取窗口可用宽高, 留边; 仅计算, 不修改全局(避免 resize 不变更画布时布局错位)
+  const avail = Math.min(window.innerWidth-30, window.innerHeight-180, 520);
+  const size = Math.max(280, avail|0);
+  const pad = Math.round(size*0.03)+6;
+  const gap = Math.round(size*0.028);
+  const cell = Math.round((size - pad*2 - gap*(N-1))/N);
+  const dim = pad*2 + cell*N + gap*(N-1);
+  return {pad, gap, cell, dim};
+}
+let layoutInit=false;
+function resize(){
+  const s = computeSize();
+  // 仅在尺寸真正变化时重设画布并提交布局参数(录制期间避免无谓清画布)
+  // 首次必须提交一次, 保证 PAD/GAP/CELL 与画布一致(避免初始默认值与画布尺寸错配)
+  if(!layoutInit || cv.width!==s.dim || cv.height!==s.dim){
+    layoutInit=true;
+    PAD = s.pad; GAP = s.gap; CELL = s.cell;
+    cv.width=s.dim; cv.height=s.dim;
+  }
+}
+window.addEventListener('resize',resize);
+resize();
+
+/* =========================================================================
+   ?demo 与 ?record 自动演示 / 录制
+   ========================================================================= */
+function autoDemoStart(){
+  // 免手势开局(尝试 resume; 浏览器策略下可能静音直到手势)
+  try{ Audio2048.ensure(); Audio2048.resume(); Audio2048.startMusic(); }catch(e){}
+  winShown=false;
+  newGame();
+  aiOn=true;
+  document.getElementById('demoBtn').textContent='AI: ON';
+  startMask.classList.add('hidden');
+}
+
+// 演示状态下: 失败/通关后自动重开, 保证整段都有内容
+setInterval(()=>{
+  if((DEMO_PARAM||RECORD_SECS>0) && aiOn){
+    if(gameOver){
+      winShown=false;
+      document.getElementById('againBtn').textContent='RETRY';
+      newGame(); aiOn=true;
+    }
+    // 胜利后继续玩(自动隐藏胜利遮罩继续刷)
+    if(won && !overMask.classList.contains('hidden')){
+      overMask.classList.add('hidden');
+      running=true;
+    }
+  }
+}, 800);
+
+function startRecording(secs){
+  try{
+    const stream=cv.captureStream(30);
+    if(!stream || !stream.getVideoTracks().length){ return; }
+    let mt='video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[];
+    mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{
+      const b=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+      a.download='neon-2048.webm'; document.body.appendChild(a);
+      try{a.click()}catch(e){}
+    };
+    mr.start(250);
+    setTimeout(()=>{ try{mr.stop()}catch(e){} }, secs*1000);
+  }catch(e){ console.warn('record',e); }
+}
+
+/* ---------- 启动 ---------- */
+requestAnimationFrame(loop);
+
+if(DEMO_PARAM || RECORD_SECS>0){
+  autoDemoStart();
+  if(RECORD_SECS>0){
+    // 确保画布尺寸有效后开始录制
+    setTimeout(()=>startRecording(RECORD_SECS), 400);
+  }
+}
+
+})();
+</script>
+</body>
+</html>

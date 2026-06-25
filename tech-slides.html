@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>技术分析 · 演示文稿</title>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Press+Start+2P&family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{ --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8; --gold:#ffd95e; --green:#5effa0; --ink:#eaf2ff; --dim:#9fb0d0;
+         --ui:'Chakra Petch',system-ui,sans-serif; --pixel:'Press Start 2P',monospace; }
+  *{margin:0;box-sizing:border-box;}
+  html,body{height:100%;overflow:hidden;background:#0a0612;color:var(--ink);font-family:'Inter',system-ui,sans-serif;}
+  #stage{position:fixed;inset:0;
+    background:linear-gradient(#160a36 0%,#3a1457 34%,#7a2a6e 55%,#ff5e7e 70%,#ff9a4d 78%,#160a36 78%);}
+  /* 网格地平线装饰 */
+  #stage::after{content:"";position:absolute;left:50%;bottom:0;width:240%;height:34%;pointer-events:none;
+    transform:translateX(-50%) perspective(160px) rotateX(64deg);transform-origin:bottom;opacity:.5;
+    background:repeating-linear-gradient(90deg,transparent 0 70px,rgba(94,240,255,.5) 70px 72px),
+              repeating-linear-gradient(0deg,transparent 0 38px,rgba(255,94,200,.6) 38px 40px);
+    -webkit-mask:linear-gradient(#000,transparent);}
+  .scan{position:fixed;inset:0;z-index:30;pointer-events:none;opacity:.3;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px);}
+  .slide{position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;
+    padding:7vh 9vw;z-index:5;}
+  .slide.on{display:flex;animation:fade .45s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  .kick{font:14px var(--pixel);color:var(--cyan);letter-spacing:3px;margin-bottom:18px;text-shadow:2px 2px 0 var(--pink);}
+  h1{font-family:var(--ui);font-weight:700;font-size:clamp(40px,7vw,104px);line-height:1.05;letter-spacing:1px;
+     background:linear-gradient(180deg,#fff,#ffe9f7 40%,#ff7ec8 62%,#ff2e88);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+     filter:drop-shadow(3px 4px 0 rgba(94,240,255,.6));}
+  h2{font-family:var(--ui);font-weight:700;font-size:clamp(28px,4.4vw,56px);margin-bottom:22px;color:#fff;
+     text-shadow:0 0 18px rgba(52,226,255,.35);}
+  h2 .n{color:var(--cyan);}
+  .sub{font-size:clamp(16px,2vw,24px);color:var(--dim);margin-top:14px;}
+  ul{list-style:none;margin-top:6px;} li{font-size:clamp(16px,2.1vw,27px);margin:14px 0;padding-left:34px;position:relative;}
+  li::before{content:"▶";position:absolute;left:0;color:var(--cyan);font-size:.8em;top:.15em;}
+  li b{color:#fff;} li em{color:var(--gold);font-style:normal;}
+  .big{font-family:var(--ui);font-weight:700;font-size:clamp(30px,4.6vw,62px);line-height:1.3;color:#fff;}
+  .big em{color:var(--gold);font-style:normal;}
+  .kpis{display:flex;gap:22px;flex-wrap:wrap;margin-top:28px;}
+  .kpis div{background:rgba(20,8,40,.5);border:2px solid var(--cyan);border-radius:6px;box-shadow:5px 5px 0 var(--pink);padding:18px 26px;}
+  .kpis .v{font-family:var(--pixel);font-size:clamp(22px,3vw,38px);color:#fff;}
+  .kpis .l{color:var(--cyan);font-size:13px;margin-top:8px;}
+  table{border-collapse:collapse;margin-top:14px;font-size:clamp(13px,1.7vw,21px);width:100%;}
+  th,td{border:1px solid rgba(94,240,255,.3);padding:8px 14px;text-align:left;}
+  th{background:rgba(255,46,136,.18);color:var(--cyan);}
+  .tags{margin-top:18px;line-height:2.2;}
+  .tag{display:inline-block;border:1px solid var(--magenta);color:#fff;font-size:clamp(11px,1.4vw,15px);padding:4px 11px;border-radius:6px;margin:4px;background:rgba(20,8,40,.4);}
+  .two{display:flex;gap:50px;flex-wrap:wrap;} .two>div{flex:1;min-width:280px;}
+  /* HUD */
+  #bar{position:fixed;left:0;bottom:0;height:5px;background:linear-gradient(90deg,var(--cyan),var(--pink));z-index:40;transition:width .3s;}
+  #cnt{position:fixed;right:18px;bottom:14px;z-index:40;font:11px var(--pixel);color:var(--cyan);}
+  #hint{position:fixed;left:18px;bottom:14px;z-index:40;font-size:12px;color:var(--dim);}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="scan"></div>
+
+<!-- 1 -->
+<section class="slide on">
+  <div class="kick">TECHNICAL ANALYSIS · 2026</div>
+  <h1>浏览器游戏<br>技术分析</h1>
+  <div class="sub">一套通用底座 · 34 款游戏 · 10+ 种渲染/交互技术 · 多智能体并行生产</div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="kick">BY THE NUMBERS</div>
+  <h2>规模一览</h2>
+  <div class="kpis">
+    <div><div class="v">34</div><div class="l">款游戏</div></div>
+    <div><div class="v">10+</div><div class="l">种核心技术</div></div>
+    <div><div class="v">~50</div><div class="l">个 AI agent 产出</div></div>
+    <div><div class="v">31</div><div class="l">段演示预告片</div></div>
+    <div><div class="v">100%</div><div class="l">单文件·离线可玩</div></div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="kick">PHILOSOPHY</div>
+  <h2>四条设计原则</h2>
+  <ul>
+    <li><b>单文件、零构建</b> —— 每款一个 HTML,双击即玩,无打包无后端</li>
+    <li><b>离线优先</b> —— 贴图/音效/配乐全部<em>用代码现场生成</em></li>
+    <li><b>统一美学</b> —— 合成波 OutRun 霓虹风,跨 34 款视觉一致</li>
+    <li><b>可演示</b> —— 内建 <em>?demo 自动演示</em> 与 <em>?record 自录</em></li>
+  </ul>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="kick">THE KEY INSIGHT</div>
+  <div class="big">游戏类型的差异,<br>不在<em>引擎</em>,而在四个旋钮:<br><br>
+    🎚️ 维度 · 🎚️ 是否要物理<br>🎚️ 输入方式 · 🎚️ 胜负结构</div>
+  <div class="sub">底座不变,换旋钮即得新类型 —— 这就是 34 款共享同一内核的根本。</div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="kick">FOUNDATION</div>
+  <h2>通用底座:任何游戏的 80%</h2>
+  <div class="two">
+    <div><ul>
+      <li><b>游戏循环</b> rAF + delta time</li>
+      <li><b>状态机</b> 菜单→游玩→结束→重开</li>
+      <li><b>碰撞</b> 圆/AABB/Box3 + 高速扫描</li>
+    </ul></div>
+    <div><ul>
+      <li><b>对象池</b> 滚动复用防卡顿</li>
+      <li><b>反馈 juice</b> 顿帧/红闪/抖动/粒子</li>
+      <li><b>存档</b> localStorage / PWA / i18n</li>
+    </ul></div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="kick">RENDERING</div>
+  <h2>渲染技术分层</h2>
+  <table>
+    <tr><th>技术</th><th>款</th><th>代表</th></tr>
+    <tr><td>Canvas 2D</td><td>~23</td><td>射击/塔防/弹球/三消/弹幕…</td></tr>
+    <tr><td>WebGL / Three.js 3D</td><td>4</td><td>赛车·跑酷·3D迷宫·体素</td></tr>
+    <tr><td>GLSL 着色器</td><td>1</td><td>霓虹隧道(raymarching)</td></tr>
+    <tr><td>DOM + CSS 3D</td><td>1</td><td>翻牌(无 canvas)</td></tr>
+    <tr><td>SVG 矢量</td><td>1</td><td>打地鼠(无 canvas)</td></tr>
+    <tr><td>matter.js 物理</td><td>1</td><td>弹珠机</td></tr>
+    <tr><td>体素 InstancedMesh</td><td>1</td><td>体素世界</td></tr>
+  </table>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="kick">PSEUDO-3D</div>
+  <h2>伪 3D 的两个招牌技巧</h2>
+  <ul>
+    <li><b>bendX(z) 弯道</b> —— 远处横向偏移 ∝ <em>曲率×距离²</em>,直路看着就蜿蜒;近处偏移≈0,碰撞仍按车道判定</li>
+    <li><b>hillY(z) 坡道</b> —— 单块细分地面,<em>每帧位移顶点</em>形成无缝起伏;车与地共用同一函数,永远贴坡</li>
+  </ul>
+  <div class="sub">90 年代街机赛车的经典做法,在 WebGL 上以极小代价复刻立体感。</div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="kick">AUDIO</div>
+  <h2>音频:零文件,全合成</h2>
+  <ul>
+    <li><b>音效/配乐</b> —— Web Audio 振荡器 + 包络,<em>前瞻调度器</em>采样级精准</li>
+    <li><b>空间音频</b> —— StereoPanner 按方位播对手车"嗖"声</li>
+    <li><b>程序化引擎声</b> —— 锯齿波频率随车速实时升降</li>
+    <li><b>音画同步</b> —— 节奏游戏判定以 <em>audioCtx.currentTime</em> 对齐,非 rAF</li>
+  </ul>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="kick">INPUT</div>
+  <h2>输入与交互技术</h2>
+  <div class="tags">
+    <span class="tag">键盘</span><span class="tag">触屏/指针</span><span class="tag">陀螺仪 DeviceOrientation</span>
+    <span class="tag">摄像头手势 MediaPipe Hands</span><span class="tag">人脸 FaceMesh</span><span class="tag">语音 SpeechRecognition</span>
+  </div>
+  <ul>
+    <li>硬件交互三款的关键:<b>优雅降级</b> —— 无摄像头/麦克风/拒权限时不白屏,自动切<em>键鼠兜底</em>仍可玩</li>
+  </ul>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="kick">AUTO-DEMO AI</div>
+  <h2>自动演示 AI</h2>
+  <table>
+    <tr><th>类型</th><th>算法</th></tr>
+    <tr><td>贪吃蛇 / 迷宫</td><td>BFS 寻路 + 洪水填充避困死</td></tr>
+    <tr><td>俄罗斯方块</td><td>枚举落点按 消行/孔洞/堆高 评分</td></tr>
+    <tr><td>扫雷</td><td>确定性推理 + 低概率猜</td></tr>
+    <tr><td>推箱子</td><td>预存已验证解法序列回放</td></tr>
+    <tr><td>节奏 / 跳舞</td><td>判定线精确时刻命中,满连击</td></tr>
+    <tr><td>赛车 / 射击</td><td>对车道/方向打分选最优</td></tr>
+  </table>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="kick">VIDEO PIPELINE</div>
+  <h2>全自动预告片管线</h2>
+  <ul>
+    <li><b>录制</b> canvas → captureStream+MediaRecorder;DOM/SVG → ffmpeg gdigrab 屏幕录制</li>
+    <li><b>整形</b> ffmpeg <em>模糊填充</em>把竖屏游戏铺满 1080×1920</li>
+    <li><b>画面</b> HyperFrames(HTML→MP4,GSAP 可 seek 时间轴逐帧渲染)</li>
+    <li><b>旁白+配乐</b> 系统 TTS(Huihui)+ Node 合成 WAV → ffmpeg 混音合成</li>
+  </ul>
+  <div class="sub">核心取舍:HyperFrames 渲不了实时游戏 → 实机画面必须<em>先录后嵌</em>。</div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="kick">LESSONS</div>
+  <h2>反复出现的工程坑</h2>
+  <table>
+    <tr><th>坑</th><th>根因 → 修法</th></tr>
+    <tr><td>录像为空</td><td>单块数据 + resize 清画布 → <em>start(250) timeslice</em></td></tr>
+    <tr><td>高速穿透</td><td>固定碰撞窗口 → <em>跨判定面扫描</em></td></tr>
+    <tr><td>"新纪录"误报</td><td>先更新 best 再比较 → 先捕获 isNew</td></tr>
+    <tr><td>AI 卡死 / TDZ / GPU 泄漏</td><td>回退合法格 / 提前声明 / 单次 dispose</td></tr>
+  </table>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="kick">METHODOLOGY</div>
+  <h2>多智能体编排生产</h2>
+  <ul>
+    <li><b>建造阶段</b> —— N 个 agent <em>并行</em>各做一款,共享风格+录制+稳健性规范</li>
+    <li><b>审查阶段</b> —— 每款跟一个<em>对抗式审查 agent</em> 通读修硬伤(部分用 CDP 实测)</li>
+    <li>共 <b>~50 个 agent</b>、数百万 token;规范随每批迭代,后续几乎一次成型</li>
+  </ul>
+  <div class="sub">把"我没法亲手跑每个游戏"的盲区,转化为可规模化的并行质检。</div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="kick">LIMITS</div>
+  <h2>局限与权衡</h2>
+  <ul>
+    <li><b>无真·联机</b> —— 单文件离线做不了真实时多人(以本地双人替代)</li>
+    <li><b>硬件交互不可自动演示</b> —— 需真人在场</li>
+    <li><b>伪 3D vs 真 3D · 自写物理 vs 引擎</b> —— 以简洁/性能换真实度</li>
+  </ul>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <div class="kick">CONCLUSION</div>
+  <div class="big">浏览器是一个被低估的、<br><em>完整的游戏平台</em>。<br><br>
+    一套底座 + 四个旋钮 + 多智能体生产<br>= 从一个立方体到 <em>34 款游戏</em>。</div>
+  <div class="sub">不是走了 34 条路,而是同一条路走了 34 遍 —— 每遍只换一个旋钮。</div>
+</section>
+
+<div id="bar"></div>
+<div id="cnt"></div>
+<div id="hint">← → / 空格 翻页 · F 全屏 · Home 回首页</div>
+
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  let i = 0;
+  const bar = document.getElementById('bar'), cnt = document.getElementById('cnt');
+  function show(n){
+    i = Math.max(0, Math.min(slides.length-1, n));
+    slides.forEach((s,k)=>s.classList.toggle('on', k===i));
+    bar.style.width = ((i+1)/slides.length*100) + '%';
+    cnt.textContent = (i+1) + ' / ' + slides.length;
+  }
+  function next(){ show(i+1); } function prev(){ show(i-1); }
+  addEventListener('keydown', e=>{
+    if(['ArrowRight','PageDown',' '].includes(e.key)){ e.preventDefault(); next(); }
+    else if(['ArrowLeft','PageUp'].includes(e.key)){ e.preventDefault(); prev(); }
+    else if(e.key==='Home'){ show(0); } else if(e.key==='End'){ show(slides.length-1); }
+    else if(e.key==='f'||e.key==='F'){ if(!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen(); }
+  });
+  addEventListener('click', e=>{ if(e.clientX < innerWidth*0.25) prev(); else next(); });
+  // 触屏滑动
+  let tx=0; addEventListener('touchstart',e=>tx=e.touches[0].clientX,{passive:true});
+  addEventListener('touchend',e=>{ const dx=e.changedTouches[0].clientX-tx; if(dx<-40)next(); else if(dx>40)prev(); });
+  show(0);
+</script>
+</body>
+</html>

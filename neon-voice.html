@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>霓虹喊话躲避飞行 · Voice Runner</title>
+<!-- Google Fonts: Press Start 2P(数字/短英文) + Chakra Petch(界面，中文回退系统字) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 合成波 OutRun 配色变量 ===== */
+  :root{
+    --pink:#ff2e88;
+    --cyan:#5ef0ff;
+    --magenta:#ff5ec8;
+    --gold:#ffd95e;
+    --green:#5effa0;
+    --bg0:#1a0b2e;   /* 深紫 */
+    --bg1:#2a0f45;   /* 紫 */
+    --bg2:#ff5ec8;   /* 日落 */
+    --ui:'Chakra Petch','Microsoft YaHei','PingFang SC',sans-serif;
+    --px:'Press Start 2P',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;overflow:hidden;background:#0d0518;}
+  body{
+    font-family:var(--ui);
+    color:#fff;
+    -webkit-font-smoothing:antialiased;
+    touch-action:none;
+  }
+  #wrap{position:fixed;inset:0;}
+  canvas{display:block;width:100%;height:100%;}
+
+  /* ===== HUD ===== */
+  #hud{
+    position:absolute;top:0;left:0;right:0;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:14px 16px;pointer-events:none;z-index:5;
+    text-shadow:0 0 8px rgba(0,0,0,.8);
+  }
+  .hud-box{
+    background:rgba(20,8,40,.55);
+    border:1px solid rgba(94,240,255,.35);
+    border-radius:10px;padding:8px 12px;
+    backdrop-filter:blur(4px);
+  }
+  .hud-label{font-size:10px;letter-spacing:1px;color:var(--cyan);opacity:.85;}
+  .hud-val{font-family:var(--px);font-size:16px;color:var(--gold);margin-top:4px;}
+  #hudScore .hud-val{color:var(--green);}
+  #hudBest .hud-val{color:var(--magenta);}
+
+  /* 识别条 */
+  #heard{
+    position:absolute;left:50%;top:64px;transform:translateX(-50%);
+    z-index:5;pointer-events:none;text-align:center;max-width:90vw;
+  }
+  #heardWord{
+    font-family:var(--px);font-size:20px;color:var(--cyan);
+    text-shadow:0 0 12px var(--cyan),0 0 24px rgba(94,240,255,.6);
+    min-height:24px;transition:transform .08s;
+  }
+  #heardWord.pulse{transform:scale(1.25);}
+  #heardSub{font-size:11px;color:var(--pink);margin-top:6px;opacity:.9;letter-spacing:1px;}
+
+  /* 指令面板 */
+  #cmds{
+    position:absolute;left:16px;bottom:16px;z-index:5;
+    background:rgba(20,8,40,.55);
+    border:1px solid rgba(255,46,136,.4);
+    border-radius:10px;padding:10px 12px;
+    backdrop-filter:blur(4px);font-size:12px;line-height:1.7;
+    pointer-events:none;max-width:46vw;
+  }
+  #cmds b{color:var(--gold);font-family:var(--px);font-size:10px;}
+  .kbd{
+    display:inline-block;background:#241038;border:1px solid var(--cyan);
+    border-radius:4px;padding:1px 6px;font-family:var(--px);font-size:9px;
+    color:var(--cyan);margin:0 2px;
+  }
+
+  /* 麦克风状态指示 */
+  #micState{
+    position:absolute;right:16px;bottom:16px;z-index:5;
+    display:flex;align-items:center;gap:8px;
+    background:rgba(20,8,40,.55);border:1px solid rgba(94,255,160,.4);
+    border-radius:20px;padding:6px 12px;font-size:12px;backdrop-filter:blur(4px);
+  }
+  #micDot{width:10px;height:10px;border-radius:50%;background:#666;box-shadow:0 0 0 rgba(94,255,160,.6);}
+  #micDot.on{background:var(--green);animation:pulseDot 1.2s infinite;}
+  #micDot.err{background:var(--pink);}
+  @keyframes pulseDot{0%{box-shadow:0 0 0 0 rgba(94,255,160,.7);}70%{box-shadow:0 0 0 10px rgba(94,255,160,0);}100%{box-shadow:0 0 0 0 rgba(94,255,160,0);}}
+
+  /* 语言切换 / 静音 按钮 */
+  #topBtns{position:absolute;right:16px;top:74px;z-index:6;display:flex;gap:8px;}
+  .ibtn{
+    pointer-events:auto;cursor:pointer;user-select:none;
+    background:rgba(20,8,40,.6);border:1px solid var(--cyan);
+    color:var(--cyan);border-radius:8px;padding:8px 10px;font-family:var(--ui);
+    font-size:12px;line-height:1;transition:.15s;
+  }
+  .ibtn:hover{background:rgba(94,240,255,.18);}
+  .ibtn:active{transform:scale(.94);}
+
+  /* ===== 遮罩 ===== */
+  .overlay{
+    position:absolute;inset:0;z-index:20;display:flex;
+    align-items:center;justify-content:center;padding:20px;
+    background:radial-gradient(ellipse at 50% 30%,rgba(255,94,200,.18),rgba(13,5,24,.92) 70%);
+    backdrop-filter:blur(3px);text-align:center;
+  }
+  .overlay.hidden{display:none;}
+  .panel{
+    max-width:540px;width:100%;
+    background:linear-gradient(160deg,rgba(42,15,69,.95),rgba(26,11,46,.95));
+    border:2px solid var(--pink);border-radius:18px;padding:26px 24px;
+    box-shadow:0 0 40px rgba(255,46,136,.5),inset 0 0 30px rgba(94,240,255,.08);
+  }
+  .title{
+    font-family:var(--px);font-size:22px;line-height:1.5;
+    color:var(--cyan);text-shadow:0 0 14px var(--cyan),0 3px 0 var(--pink);
+    margin-bottom:6px;
+  }
+  .subtitle{font-size:13px;color:var(--gold);letter-spacing:2px;margin-bottom:16px;}
+  .how{
+    text-align:left;font-size:13.5px;line-height:1.8;color:#e9d9ff;
+    background:rgba(0,0,0,.25);border-radius:10px;padding:12px 14px;margin-bottom:14px;
+  }
+  .how b{color:var(--green);}
+  .how .v{color:var(--cyan);font-family:var(--px);font-size:10px;}
+  .warn{font-size:12px;color:var(--gold);line-height:1.7;margin-bottom:16px;opacity:.95;}
+  .warn.bad{color:var(--pink);}
+  .start-btn{
+    cursor:pointer;user-select:none;display:inline-block;
+    font-family:var(--px);font-size:16px;color:#1a0b2e;
+    background:linear-gradient(90deg,var(--cyan),var(--green));
+    border:none;border-radius:12px;padding:16px 28px;
+    box-shadow:0 0 24px rgba(94,240,255,.7);transition:.15s;
+  }
+  .start-btn:hover{transform:translateY(-2px) scale(1.03);box-shadow:0 0 34px rgba(94,255,160,.9);}
+  .start-btn:active{transform:scale(.97);}
+  .small{font-size:11px;color:#b79edb;margin-top:14px;line-height:1.6;}
+  #finalScore{font-family:var(--px);font-size:30px;color:var(--gold);margin:10px 0;text-shadow:0 0 16px var(--gold);}
+  #finalBest{font-size:13px;color:var(--magenta);margin-bottom:12px;}
+  .blink{animation:bk 1s steps(2) infinite;}
+  @keyframes bk{50%{opacity:.25;}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hudScore" class="hud-box"><div class="hud-label">SCORE 分数</div><div class="hud-val">0</div></div>
+    <div id="hudBest" class="hud-box"><div class="hud-label">BEST 最高</div><div class="hud-val">0</div></div>
+  </div>
+
+  <div id="topBtns">
+    <div id="btnLang" class="ibtn" title="切换识别语言">🌐 中文</div>
+    <div id="btnMute" class="ibtn" title="静音/取消静音">🔊</div>
+  </div>
+
+  <div id="heard">
+    <div id="heardWord"></div>
+    <div id="heardSub"></div>
+  </div>
+
+  <div id="cmds">
+    <b>语音指令 / VOICE</b><br>
+    上·跳 <span class="kbd">UP</span> &nbsp; 下 <span class="kbd">DOWN</span><br>
+    开火 <span class="kbd">FIRE</span><br>
+    <b style="font-size:9px;color:var(--cyan)">键盘兜底</b>
+    <span class="kbd">↑</span><span class="kbd">↓</span> 切轨 <span class="kbd">␣</span>开火
+  </div>
+
+  <div id="micState"><span id="micDot"></span><span id="micText">麦克风未开启</span></div>
+
+  <!-- 开始遮罩 -->
+  <div id="startOverlay" class="overlay">
+    <div class="panel">
+      <div class="title">霓虹喊话躲避飞行</div>
+      <div class="subtitle">VOICE NEON RUNNER</div>
+      <div class="how">
+        🚀 操控霓虹小飞船在三条高度轨道间穿梭，躲避迎面而来的霓虹障碍。<br>
+        🎙 喊 <span class="v">上/UP/跳</span> 上移，喊 <span class="v">下/DOWN</span> 下移，喊 <span class="v">开火/FIRE</span> 发射激光击碎障碍。<br>
+        ⌨ <b>键盘兜底</b>：方向键 <span class="v">↑↓</span> 切换轨道，空格 <span class="v">␣</span> 开火 —— 无麦克风也能玩。<br>
+        💥 撞到障碍 <b>-1 命</b>，共 3 命；存活与击碎都得分，速度越来越快。
+      </div>
+      <div id="capWarn" class="warn"></div>
+      <button id="startBtn" class="start-btn">点击开始 / 允许麦克风</button>
+      <div class="small">
+        建议使用 <b style="color:var(--cyan)">Chrome / Edge</b>（语音识别仅 Chromium 内核支持）。<br>
+        点击后浏览器会请求麦克风权限；可随时按右上角 🌐 切换中/英文识别。
+      </div>
+    </div>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div id="endOverlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title" style="color:var(--pink);text-shadow:0 0 14px var(--pink),0 3px 0 var(--cyan);">游戏结束</div>
+      <div class="subtitle">GAME OVER</div>
+      <div id="finalScore">0</div>
+      <div id="finalBest"></div>
+      <button id="restartBtn" class="start-btn" style="background:linear-gradient(90deg,var(--pink),var(--gold));box-shadow:0 0 24px rgba(255,46,136,.7);">再来一局 / RETRY</button>
+      <div class="small blink">喊「上/下/开火」或用方向键 + 空格继续战斗</div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   霓虹喊话躲避飞行 —— 单文件 / 无构建 / 双击即玩
+   语音：Web Speech API (SpeechRecognition) 持续+interim，中英文
+   降级：不支持/拒绝时键盘兜底（方向键 + 空格）
+   ========================================================================= */
+
+(function(){
+  /* ---------- DOM ---------- */
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const elScore = document.querySelector('#hudScore .hud-val');
+  const elBest  = document.querySelector('#hudBest .hud-val');
+  const elHeard = document.getElementById('heardWord');
+  const elHeardSub = document.getElementById('heardSub');
+  const micDot = document.getElementById('micDot');
+  const micText = document.getElementById('micText');
+  const startOverlay = document.getElementById('startOverlay');
+  const endOverlay = document.getElementById('endOverlay');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const capWarn = document.getElementById('capWarn');
+  const finalScore = document.getElementById('finalScore');
+  const finalBest = document.getElementById('finalBest');
+  const btnLang = document.getElementById('btnLang');
+  const btnMute = document.getElementById('btnMute');
+
+  /* ---------- 画布尺寸 / DPR ---------- */
+  let W=0,H=0,DPR=1;
+  function resize(){
+    try{
+      DPR = Math.min(window.devicePixelRatio||1, 2);
+      W = window.innerWidth; H = window.innerHeight;
+      canvas.width = Math.floor(W*DPR);
+      canvas.height = Math.floor(H*DPR);
+      canvas.style.width = W+'px';
+      canvas.style.height = H+'px';
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+      computeLanes();
+    }catch(e){ console.warn('resize err',e); }
+  }
+  window.addEventListener('resize', resize);
+
+  /* ---------- 轨道 ---------- */
+  const LANE_COUNT = 3;
+  let laneY = [];           // 每条轨道的 y 中心
+  function computeLanes(){
+    const top = H*0.32, bot = H*0.82;
+    laneY = [];
+    for(let i=0;i<LANE_COUNT;i++){
+      laneY.push(top + (bot-top)*(i/(LANE_COUNT-1)));
+    }
+  }
+
+  /* ---------- 游戏状态 ---------- */
+  const BEST_KEY = 'neonVoiceBest';
+  let best = 0;
+  try{ best = parseInt(localStorage.getItem(BEST_KEY)||'0',10)||0; }catch(e){ best = 0; }
+  elBest.textContent = best;
+
+  const G = {
+    running:false,
+    over:false,
+    score:0,
+    lives:3,
+    speed:300,          // 障碍移动像素/秒（基础）
+    spawnTimer:0,
+    spawnGap:1.1,       // 障碍生成间隔(秒)
+    elapsed:0,
+    shake:0,
+    flash:0,            // 受击红闪
+  };
+
+  /* ---------- 飞船 ---------- */
+  const ship = {
+    lane:1,             // 目标轨道索引
+    x:0,
+    y:0,
+    yVel:0,
+    jump:0,             // 跳跃偏移(向上为正)
+    cool:0,             // 开火冷却
+    invul:0,            // 撞击后无敌时间
+  };
+
+  let obstacles = [];   // {x,y,lane,r,broken,hue,vy}
+  let bullets = [];     // {x,y}
+  let particles = [];   // {x,y,vx,vy,life,max,color,size}
+  let stars = [];       // 背景星
+  let mountains = [];   // 远景山线相位
+
+  function initStars(){
+    stars = [];
+    for(let i=0;i<70;i++){
+      stars.push({x:Math.random(),y:Math.random()*0.45,z:Math.random()*0.8+0.2});
+    }
+  }
+
+  /* =========================================================================
+     音频：Web Audio 程序化音效 + 合成波循环配乐
+     ========================================================================= */
+  const Audio_ = {
+    ctx:null, master:null, musicGain:null, sfxGain:null,
+    muted:false, started:false, loopTimer:null, step:0,
+  };
+  function audioInit(){
+    if(Audio_.started) return;
+    try{
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return;
+      Audio_.ctx = new AC();
+      Audio_.master = Audio_.ctx.createGain();
+      Audio_.master.gain.value = 0.9;
+      Audio_.master.connect(Audio_.ctx.destination);
+      Audio_.musicGain = Audio_.ctx.createGain();
+      Audio_.musicGain.gain.value = 0.22;
+      Audio_.musicGain.connect(Audio_.master);
+      Audio_.sfxGain = Audio_.ctx.createGain();
+      Audio_.sfxGain.gain.value = 0.5;
+      Audio_.sfxGain.connect(Audio_.master);
+      Audio_.started = true;
+      startMusic();
+    }catch(e){ console.warn('audio init err',e); }
+  }
+  function audioResume(){
+    try{ if(Audio_.ctx && Audio_.ctx.state==='suspended') Audio_.ctx.resume(); }catch(e){}
+  }
+  // 简易合成器音效
+  function blip(freq,dur,type,vol,slideTo){
+    if(!Audio_.started || Audio_.muted) return;
+    try{
+      const c=Audio_.ctx, t=c.currentTime;
+      const o=c.createOscillator(), g=c.createGain();
+      o.type=type||'square';
+      o.frequency.setValueAtTime(freq,t);
+      if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(40,slideTo),t+dur);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(vol||0.3,t+0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      o.connect(g); g.connect(Audio_.sfxGain);
+      o.start(t); o.stop(t+dur+0.02);
+    }catch(e){}
+  }
+  function noiseHit(){
+    if(!Audio_.started || Audio_.muted) return;
+    try{
+      const c=Audio_.ctx, t=c.currentTime, len=0.3;
+      const buf=c.createBuffer(1,Math.floor(c.sampleRate*len),c.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
+      const src=c.createBufferSource(); src.buffer=buf;
+      const g=c.createGain(); g.gain.value=0.6;
+      const f=c.createBiquadFilter(); f.type='lowpass'; f.frequency.value=900;
+      src.connect(f); f.connect(g); g.connect(Audio_.sfxGain);
+      src.start(t);
+    }catch(e){}
+  }
+  // 合成波循环配乐（贝斯 + 琶音）
+  const BASS=[55,55,73.42,65.41]; // A1 A1 D2 C2
+  const ARP=[440,554.37,659.25,880]; // A C# E A
+  function startMusic(){
+    if(Audio_.loopTimer) return;
+    const stepDur=0.26;
+    function tick(){
+      if(!Audio_.started){ return; }
+      try{
+        if(!Audio_.muted){
+          const c=Audio_.ctx, t=c.currentTime;
+          // 贝斯
+          if(Audio_.step%2===0){
+            const bi=Math.floor(Audio_.step/2)%BASS.length;
+            const o=c.createOscillator(),g=c.createGain();
+            o.type='sawtooth'; o.frequency.value=BASS[bi];
+            g.gain.setValueAtTime(0.0001,t);
+            g.gain.exponentialRampToValueAtTime(0.3,t+0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001,t+stepDur*1.8);
+            const f=c.createBiquadFilter(); f.type='lowpass'; f.frequency.value=400;
+            o.connect(f); f.connect(g); g.connect(Audio_.musicGain);
+            o.start(t); o.stop(t+stepDur*2);
+          }
+          // 琶音
+          const ai=Audio_.step%ARP.length;
+          const o2=c.createOscillator(),g2=c.createGain();
+          o2.type='square'; o2.frequency.value=ARP[ai];
+          g2.gain.setValueAtTime(0.0001,t);
+          g2.gain.exponentialRampToValueAtTime(0.12,t+0.01);
+          g2.gain.exponentialRampToValueAtTime(0.0001,t+stepDur*0.9);
+          o2.connect(g2); g2.connect(Audio_.musicGain);
+          o2.start(t); o2.stop(t+stepDur);
+        }
+      }catch(e){}
+      Audio_.step=(Audio_.step+1)%64;
+    }
+    Audio_.loopTimer=setInterval(tick, 260);
+  }
+  function toggleMute(){
+    Audio_.muted=!Audio_.muted;
+    btnMute.textContent = Audio_.muted?'🔇':'🔊';
+    try{ if(Audio_.master) Audio_.master.gain.value = Audio_.muted?0:0.9; }catch(e){}
+  }
+  btnMute.addEventListener('click', ()=>{ audioInit(); audioResume(); toggleMute(); });
+
+  /* =========================================================================
+     语音识别：Web Speech API
+     ========================================================================= */
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recog=null, recogWanted=false, recogLang='zh-CN', speechSupported=!!SR;
+
+  // 指令关键词（中英）
+  const CMD = {
+    up:   ['上','上面','跳','起','向上','升','high','up','jump','top','rise'],
+    down: ['下','下面','降','向下','低','蹲','low','down','duck','bottom','drop'],
+    fire: ['开火','射','打','发射','炮','击','轰','fire','shoot','blast','pew','bang','laser'],
+  };
+  function matchCmd(text){
+    const t = text.toLowerCase().replace(/\s+/g,'');
+    const hits = [];
+    // 先匹配开火（优先级高），允许一句多指令
+    for(const k of CMD.fire){ if(t.includes(k.toLowerCase())){ hits.push('fire'); break; } }
+    for(const k of CMD.up){   if(t.includes(k.toLowerCase())){ hits.push('up'); break; } }
+    for(const k of CMD.down){ if(t.includes(k.toLowerCase())){ hits.push('down'); break; } }
+    return hits;
+  }
+
+  function setMic(state, msg){
+    micDot.className = state==='on'?'on':(state==='err'?'err':'');
+    micText.textContent = msg;
+  }
+
+  function showHeard(word, isFinal){
+    elHeard.textContent = word;
+    elHeard.classList.remove('pulse'); void elHeard.offsetWidth;
+    if(isFinal) elHeard.classList.add('pulse');
+  }
+
+  function handleTranscript(text, isFinal){
+    if(!text) return;
+    showHeard(text.slice(-18), isFinal);
+    const hits = matchCmd(text);
+    if(hits.length){
+      // 仅在 final 或较强 interim 时执行，避免误触发——这里用去抖
+      for(const h of hits) doCommand(h);
+      elHeardSub.textContent = '识别指令: ' + hits.map(h=>({up:'上',down:'下',fire:'开火'}[h])).join(' / ');
+    }
+  }
+
+  let lastCmdTime = {up:0,down:0,fire:0};
+  function doCommand(cmd){
+    const now = performance.now();
+    // 去抖：同一指令 280ms 内只触发一次（防止 interim 重复）
+    if(now - (lastCmdTime[cmd]||0) < 280) return;
+    lastCmdTime[cmd] = now;
+    if(!G.running) return;
+    if(cmd==='up') moveShip(-1);
+    else if(cmd==='down') moveShip(1);
+    else if(cmd==='fire') fire();
+  }
+
+  function buildRecognizer(){
+    if(!SR) return null;
+    const r = new SR();
+    r.continuous = true;
+    r.interimResults = true;
+    r.lang = recogLang;
+    r.maxAlternatives = 1;
+    r.onstart = ()=> setMic('on','聆听中 · '+(recogLang==='zh-CN'?'中文':'EN'));
+    r.onresult = (ev)=>{
+      try{
+        for(let i=ev.resultIndex;i<ev.results.length;i++){
+          const res = ev.results[i];
+          const txt = res[0].transcript;
+          handleTranscript(txt, res.isFinal);
+        }
+      }catch(e){ console.warn('onresult err',e); }
+    };
+    r.onerror = (ev)=>{
+      console.warn('SR error', ev.error);
+      if(ev.error==='not-allowed' || ev.error==='service-not-allowed'){
+        recogWanted=false;
+        setMic('err','麦克风被拒绝 · 用键盘 ↑↓␣');
+        elHeardSub.textContent='麦克风权限被拒绝，已切换键盘操作';
+      }else if(ev.error==='no-speech'){
+        setMic('on','聆听中(没听到声音)…');
+      }else if(ev.error==='audio-capture'){
+        recogWanted=false;
+        setMic('err','未找到麦克风 · 用键盘');
+      }
+    };
+    r.onend = ()=>{
+      // continuous 模式下浏览器可能自动结束，自动重启保持持续聆听
+      if(recogWanted){
+        try{ r.start(); }catch(e){ /* 可能 InvalidState，稍后重试 */ setTimeout(()=>{ if(recogWanted){ try{r.start();}catch(_){}}},400); }
+      }else{
+        setMic('','麦克风已停止');
+      }
+    };
+    return r;
+  }
+
+  // 请求麦克风 + 启动识别
+  async function startSpeech(){
+    if(!speechSupported){
+      setMic('err','此浏览器不支持语音 · 用键盘');
+      return false;
+    }
+    // 先用 getUserMedia 触发明确的权限弹窗（更稳健）
+    try{
+      if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        // 立即停掉轨道，SpeechRecognition 会自行管理麦克风
+        stream.getTracks().forEach(t=>t.stop());
+      }
+    }catch(e){
+      console.warn('getUserMedia denied',e);
+      setMic('err','麦克风被拒绝 · 用键盘 ↑↓␣');
+      elHeardSub.textContent='未授权麦克风，已启用键盘兜底';
+      return false;
+    }
+    try{
+      recog = buildRecognizer();
+      recogWanted = true;
+      recog.start();
+      return true;
+    }catch(e){
+      console.warn('recog start err',e);
+      setMic('err','语音启动失败 · 用键盘');
+      return false;
+    }
+  }
+  function restartSpeechLang(){
+    if(!recog || !recogWanted) return;
+    try{ recogWanted=false; recog.onend=null; recog.stop(); }catch(e){}
+    setTimeout(()=>{ recog=buildRecognizer(); recogWanted=true; try{recog.start();}catch(e){} }, 250);
+  }
+  btnLang.addEventListener('click', ()=>{
+    recogLang = recogLang==='zh-CN' ? 'en-US' : 'zh-CN';
+    btnLang.textContent = recogLang==='zh-CN' ? '🌐 中文' : '🌐 EN';
+    if(recogWanted) restartSpeechLang();
+    else setMic(micDot.className==='err'?'err':'', '语言: '+(recogLang==='zh-CN'?'中文':'English'));
+  });
+
+  /* =========================================================================
+     游戏逻辑
+     ========================================================================= */
+  function moveShip(dir){
+    const nl = Math.max(0, Math.min(LANE_COUNT-1, ship.lane+dir));
+    if(nl!==ship.lane){
+      ship.lane = nl;
+      blip(dir<0?660:330, 0.12, 'square', 0.28, dir<0?990:220);
+      spawnThruster(6);
+    }else{
+      // 已在边缘——做一个小跳跃反馈
+      if(dir<0){ ship.jump = Math.max(ship.jump, 26); ship.yVel = -180; blip(880,0.1,'triangle',0.25,1200); }
+    }
+  }
+  function fire(){
+    if(ship.cool>0) return;
+    ship.cool = 0.18;
+    bullets.push({x:ship.x+30, y:ship.y});
+    blip(1200,0.12,'sawtooth',0.3, 400);
+    spawnMuzzle();
+  }
+
+  function spawnObstacle(){
+    const lane = Math.floor(Math.random()*LANE_COUNT);
+    const hues = [320, 190, 50, 140]; // 粉 青 金 绿
+    obstacles.push({
+      x: W + 60,
+      lane,
+      y: laneY[lane],
+      r: 22 + Math.random()*10,
+      broken:false,
+      hue: hues[Math.floor(Math.random()*hues.length)],
+      spin: Math.random()*Math.PI,
+    });
+    // 偶尔双障碍（更高难度）
+    if(G.elapsed>18 && Math.random()<0.25){
+      let l2 = (lane + 1 + Math.floor(Math.random()*(LANE_COUNT-1)))%LANE_COUNT;
+      obstacles.push({x:W+60+70,lane:l2,y:laneY[l2],r:22+Math.random()*8,broken:false,hue:hues[Math.floor(Math.random()*hues.length)],spin:Math.random()*Math.PI});
+    }
+  }
+
+  function spawnExplosion(x,y,hue){
+    for(let i=0;i<22;i++){
+      const a=Math.random()*Math.PI*2, sp=60+Math.random()*220;
+      particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0,max:0.6+Math.random()*0.4,
+        color:`hsl(${hue},100%,${55+Math.random()*25}%)`,size:2+Math.random()*4});
+    }
+  }
+  function spawnThruster(n){
+    for(let i=0;i<n;i++){
+      particles.push({x:ship.x-20,y:ship.y+(Math.random()*10-5),vx:-(120+Math.random()*120),vy:(Math.random()*40-20),
+        life:0,max:0.4,color:Math.random()<0.5?'#5ef0ff':'#ff2e88',size:2+Math.random()*3});
+    }
+  }
+  function spawnMuzzle(){
+    for(let i=0;i<6;i++){
+      particles.push({x:ship.x+30,y:ship.y,vx:80+Math.random()*120,vy:(Math.random()*60-30),
+        life:0,max:0.25,color:'#ffd95e',size:2+Math.random()*2});
+    }
+  }
+
+  function startGame(){
+    G.running=true; G.over=false;
+    G.score=0; G.lives=3; G.speed=300;
+    G.spawnTimer=0; G.spawnGap=1.1; G.elapsed=0; G.shake=0; G.flash=0;
+    ship.lane=1; ship.jump=0; ship.yVel=0; ship.cool=0; ship.invul=0;
+    obstacles=[]; bullets=[]; particles=[];
+    elScore.textContent='0';
+    startOverlay.classList.add('hidden');
+    endOverlay.classList.add('hidden');
+    blip(523,0.1,'square',0.3,784);
+    setTimeout(()=>blip(784,0.14,'square',0.3,1046),110);
+  }
+
+  function gameOver(){
+    G.running=false; G.over=true;
+    const sc = Math.floor(G.score);
+    let isNew = false;
+    if(sc>best){ best=sc; isNew=true; try{ localStorage.setItem(BEST_KEY,String(best)); }catch(e){} elBest.textContent=best; }
+    finalScore.textContent = sc;
+    finalBest.textContent = (isNew && sc>0 ? '🏆 新纪录！ ' : '最高分 ') + best;
+    endOverlay.classList.remove('hidden');
+    blip(330,0.18,'sawtooth',0.32,110);
+    setTimeout(()=>blip(220,0.25,'sawtooth',0.3,70),140);
+    noiseHit();
+  }
+
+  function loseLife(ob){
+    if(ship.invul>0) return;
+    G.lives--;
+    ship.invul = 1.4;
+    G.flash = 0.5; G.shake = 14;
+    spawnExplosion(ship.x, ship.y, 0);
+    noiseHit(); blip(180,0.2,'square',0.3,80);
+    if(G.lives<=0){ gameOver(); }
+  }
+
+  /* ---------- 更新 ---------- */
+  function update(dt){
+    G.elapsed += dt;
+    // 难度递增
+    G.speed = 300 + G.elapsed*16;
+    G.spawnGap = Math.max(0.5, 1.1 - G.elapsed*0.012);
+
+    // 分数（存活）
+    G.score += dt*10;
+    elScore.textContent = Math.floor(G.score);
+
+    // 飞船 y 平滑趋近目标轨道
+    const targetY = laneY[ship.lane] - ship.jump;
+    ship.y += (targetY - ship.y) * Math.min(1, dt*12);
+    ship.x = W*0.2;
+    // 跳跃回落
+    if(ship.jump>0){
+      ship.yVel += 900*dt;
+      ship.jump -= ship.yVel*dt*0.06;
+      if(ship.jump<0){ ship.jump=0; ship.yVel=0; }
+    }
+    if(ship.cool>0) ship.cool-=dt;
+    if(ship.invul>0) ship.invul-=dt;
+
+    // 生成障碍
+    G.spawnTimer += dt;
+    if(G.spawnTimer >= G.spawnGap){ G.spawnTimer=0; spawnObstacle(); }
+
+    // 障碍移动
+    for(const o of obstacles){
+      o.x -= G.speed*dt;
+      o.spin += dt*2;
+    }
+    // 子弹
+    for(const b of bullets){ b.x += 720*dt; }
+    bullets = bullets.filter(b=>b.x < W+40);
+
+    // 子弹 vs 障碍
+    for(const b of bullets){
+      for(const o of obstacles){
+        if(o.broken) continue;
+        const dx=b.x-o.x, dy=b.y-o.y;
+        if(dx*dx+dy*dy < (o.r+8)*(o.r+8)){
+          o.broken=true; b.x=W+999;
+          G.score += 25;
+          spawnExplosion(o.x,o.y,o.hue);
+          blip(900,0.12,'square',0.28,200); noiseHit();
+        }
+      }
+    }
+    obstacles = obstacles.filter(o=>!o.broken && o.x > -80);
+
+    // 障碍 vs 飞船
+    for(const o of obstacles){
+      const dx=ship.x-o.x, dy=ship.y-o.y;
+      const rr=(o.r+18);
+      if(dx*dx+dy*dy < rr*rr){
+        loseLife(o);
+        o.broken=true;
+      }
+    }
+    obstacles = obstacles.filter(o=>!o.broken);
+
+    // 粒子
+    for(const p of particles){
+      p.life+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=180*dt; p.vx*=0.98;
+    }
+    particles = particles.filter(p=>p.life<p.max);
+
+    // 持续尾焰
+    if(Math.random()<0.6) spawnThruster(1);
+
+    // 背景星移动
+    for(const s of stars){ s.x -= (s.z*0.04)*dt; if(s.x<0) s.x=1; }
+
+    if(G.shake>0) G.shake = Math.max(0,G.shake-dt*40);
+    if(G.flash>0) G.flash = Math.max(0,G.flash-dt*1.4);
+  }
+
+  /* ---------- 渲染 ---------- */
+  let gridPhase=0;
+  function render(){
+    ctx.save();
+    // 屏震
+    if(G.shake>0){
+      ctx.translate((Math.random()-0.5)*G.shake,(Math.random()-0.5)*G.shake);
+    }
+
+    // 日落渐变背景
+    const grad = ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'#1a0b2e');
+    grad.addColorStop(0.45,'#3a0f55');
+    grad.addColorStop(0.6,'#ff2e88');
+    grad.addColorStop(0.72,'#ff5ec8');
+    grad.addColorStop(0.8,'#2a0f45');
+    grad.addColorStop(1,'#0d0518');
+    ctx.fillStyle=grad;
+    ctx.fillRect(-40,-40,W+80,H+80);
+
+    // 太阳
+    const sunY=H*0.34, sunR=Math.min(W,H)*0.16;
+    const sg=ctx.createLinearGradient(0,sunY-sunR,0,sunY+sunR);
+    sg.addColorStop(0,'#ffd95e'); sg.addColorStop(0.5,'#ff5ec8'); sg.addColorStop(1,'#ff2e88');
+    ctx.save();
+    ctx.beginPath(); ctx.arc(W/2,sunY,sunR,0,Math.PI*2); ctx.clip();
+    ctx.fillStyle=sg; ctx.fillRect(W/2-sunR,sunY-sunR,sunR*2,sunR*2);
+    // 太阳条纹
+    ctx.fillStyle='rgba(26,11,46,0.55)';
+    for(let i=0;i<7;i++){ const yy=sunY+sunR*0.15+i*(sunR*0.16); ctx.fillRect(W/2-sunR,yy,sunR*2,sunR*0.07+i*0.5); }
+    ctx.restore();
+
+    // 星
+    ctx.fillStyle='rgba(255,255,255,0.8)';
+    for(const s of stars){ ctx.globalAlpha=s.z; ctx.fillRect(s.x*W,s.y*H,1.5,1.5); }
+    ctx.globalAlpha=1;
+
+    // 透视网格地面
+    gridPhase=(gridPhase + (G.running?G.speed:120)*0.0016)%1;
+    const horizon=H*0.46;
+    ctx.strokeStyle='rgba(94,240,255,0.45)'; ctx.lineWidth=1.5;
+    ctx.shadowBlur=8; ctx.shadowColor='#5ef0ff';
+    // 横线
+    for(let i=0;i<16;i++){
+      let f=(i+gridPhase)/16; f=f*f;
+      const y=horizon+(H-horizon)*f;
+      ctx.globalAlpha=0.15+0.5*f;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    }
+    // 竖线
+    ctx.globalAlpha=0.4;
+    for(let i=-10;i<=10;i++){
+      const vx=W/2 + i*(W*0.09);
+      ctx.beginPath(); ctx.moveTo(W/2+i*8,horizon); ctx.lineTo(vx*1.6-W*0.3*Math.sign(i||1)*0+vx,H); ctx.stroke();
+    }
+    ctx.globalAlpha=1; ctx.shadowBlur=0;
+
+    // 轨道高亮线
+    for(let i=0;i<LANE_COUNT;i++){
+      ctx.strokeStyle='rgba(255,46,136,0.18)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(0,laneY[i]); ctx.lineTo(W,laneY[i]); ctx.stroke();
+    }
+
+    if(G.running || G.over){
+      // 子弹
+      for(const b of bullets){
+        ctx.save();
+        ctx.shadowBlur=14; ctx.shadowColor='#ffd95e'; ctx.fillStyle='#ffd95e';
+        ctx.fillRect(b.x-14,b.y-2.5,28,5);
+        ctx.fillStyle='#fff'; ctx.fillRect(b.x-6,b.y-1.5,12,3);
+        ctx.restore();
+      }
+
+      // 障碍
+      for(const o of obstacles){
+        drawObstacle(o);
+      }
+
+      // 飞船（受击闪烁）
+      if(!(ship.invul>0 && Math.floor(ship.invul*20)%2===0)){
+        drawShip(ship.x, ship.y);
+      }
+
+      // 粒子
+      for(const p of particles){
+        const a=1-p.life/p.max;
+        ctx.globalAlpha=a; ctx.fillStyle=p.color;
+        ctx.shadowBlur=8; ctx.shadowColor=p.color;
+        ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+      }
+      ctx.globalAlpha=1; ctx.shadowBlur=0;
+
+      // 命数显示（右上方心）
+      drawLives();
+    }
+
+    ctx.restore();
+
+    // 受击红闪
+    if(G.flash>0){
+      ctx.fillStyle=`rgba(255,46,136,${G.flash*0.5})`;
+      ctx.fillRect(0,0,W,H);
+    }
+  }
+
+  function drawShip(x,y){
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.shadowBlur=18; ctx.shadowColor='#5ef0ff';
+    // 机身
+    ctx.fillStyle='#5ef0ff';
+    ctx.beginPath();
+    ctx.moveTo(34,0); ctx.lineTo(-16,-15); ctx.lineTo(-8,0); ctx.lineTo(-16,15);
+    ctx.closePath(); ctx.fill();
+    // 内层
+    ctx.fillStyle='#ff2e88'; ctx.shadowColor='#ff2e88';
+    ctx.beginPath();
+    ctx.moveTo(20,0); ctx.lineTo(-10,-8); ctx.lineTo(-4,0); ctx.lineTo(-10,8);
+    ctx.closePath(); ctx.fill();
+    // 驾驶舱
+    ctx.fillStyle='#ffd95e'; ctx.shadowColor='#ffd95e';
+    ctx.beginPath(); ctx.arc(6,0,4,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawObstacle(o){
+    ctx.save();
+    ctx.translate(o.x,o.y); ctx.rotate(o.spin);
+    ctx.shadowBlur=16; ctx.shadowColor=`hsl(${o.hue},100%,60%)`;
+    ctx.strokeStyle=`hsl(${o.hue},100%,65%)`; ctx.lineWidth=3;
+    ctx.fillStyle=`hsla(${o.hue},100%,50%,0.18)`;
+    // 六边形障碍
+    ctx.beginPath();
+    for(let i=0;i<6;i++){
+      const a=i/6*Math.PI*2;
+      const px=Math.cos(a)*o.r, py=Math.sin(a)*o.r;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // 内核
+    ctx.beginPath(); ctx.arc(0,0,o.r*0.4,0,Math.PI*2);
+    ctx.fillStyle=`hsl(${o.hue},100%,70%)`; ctx.fill();
+    ctx.restore();
+  }
+
+  function drawLives(){
+    const startX=W/2 - (G.lives-1)*16;
+    for(let i=0;i<G.lives;i++){
+      const x=startX+i*32, y=28;
+      ctx.save();
+      ctx.translate(x,y); ctx.scale(1.1,1.1);
+      ctx.shadowBlur=10; ctx.shadowColor='#ff2e88'; ctx.fillStyle='#ff2e88';
+      ctx.beginPath();
+      ctx.moveTo(0,4);
+      ctx.bezierCurveTo(-6,-4,-12,2,0,10);
+      ctx.bezierCurveTo(12,2,6,-4,0,4);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /* ---------- 主循环 ---------- */
+  let lastT=performance.now();
+  function loop(now){
+    try{
+      let dt=(now-lastT)/1000; lastT=now;
+      if(dt>0.05) dt=0.05; // 防止切后台后大跳
+      if(G.running){
+        try{ update(dt); }catch(e){ console.warn('update err',e); }
+      }
+      try{ render(); }catch(e){ console.warn('render err',e); }
+    }catch(e){ console.warn('loop err',e); }
+    requestAnimationFrame(loop);
+  }
+
+  /* =========================================================================
+     输入：键盘兜底
+     ========================================================================= */
+  window.addEventListener('keydown',(e)=>{
+    if(e.code==='ArrowUp'||e.code==='KeyW'){ e.preventDefault(); if(G.running) moveShip(-1); }
+    else if(e.code==='ArrowDown'||e.code==='KeyS'){ e.preventDefault(); if(G.running) moveShip(1); }
+    else if(e.code==='Space'){ e.preventDefault(); if(G.running) fire(); else if(G.over) startGame(); else if(!startOverlay.classList.contains('hidden')) handleStart(); }
+    else if(e.code==='Enter'){ if(G.running) return; if(G.over) startGame(); else if(!startOverlay.classList.contains('hidden')) handleStart(); }
+  });
+  // 触摸兜底：上半屏=上，下半屏=下，双指/长按=开火
+  let touchStartY=0;
+  canvas.addEventListener('touchstart',(e)=>{
+    if(!G.running) return;
+    if(e.touches.length>=2){ fire(); return; }
+    const y=e.touches[0].clientY;
+    if(y<H*0.4) moveShip(-1);
+    else if(y>H*0.6) moveShip(1);
+    else fire();
+  },{passive:true});
+
+  /* =========================================================================
+     能力检测 + 启动流程
+     ========================================================================= */
+  function detectCapabilities(){
+    const isChromium = !!(window.chrome) || /Edg|Chrome|CriOS/.test(navigator.userAgent);
+    if(!speechSupported){
+      capWarn.classList.add('bad');
+      capWarn.innerHTML='⚠ 当前浏览器不支持语音识别（仅 Chrome / Edge 等 Chromium 内核支持）。<br>无需担心 —— 可直接用 <span class="kbd">↑</span><span class="kbd">↓</span> 切轨、<span class="kbd">␣</span> 开火 正常游玩。';
+    }else if(!window.isSecureContext){
+      capWarn.classList.add('bad');
+      capWarn.innerHTML='⚠ 非安全环境（需 https 或 localhost），语音/麦克风可能被禁用。<br>仍可用键盘 <span class="kbd">↑</span><span class="kbd">↓</span><span class="kbd">␣</span> 游玩。';
+    }else{
+      capWarn.innerHTML='🎙 点击开始后将请求麦克风权限。若拒绝或失败，会自动启用键盘兜底。';
+    }
+  }
+
+  let starting=false;
+  async function handleStart(){
+    if(starting) return; starting=true;
+    audioInit(); audioResume();      // 首次用户手势后初始化音频
+    startBtn.textContent='启动中…';
+    // 尝试语音（失败不阻塞游戏）
+    try{ await startSpeech(); }catch(e){ console.warn(e); }
+    startBtn.textContent='点击开始 / 允许麦克风';
+    startGame();
+    starting=false;
+  }
+  startBtn.addEventListener('click', handleStart);
+  restartBtn.addEventListener('click', ()=>{ audioResume(); startGame(); });
+
+  /* ---------- 初始化 ---------- */
+  function boot(){
+    resize();
+    initStars();
+    computeLanes();
+    ship.y = laneY[1];
+    ship.x = W*0.2;
+    detectCapabilities();
+    if(!speechSupported) setMic('err','语音不支持 · 键盘 ↑↓␣');
+    else setMic('','点击开始后请求麦克风');
+    requestAnimationFrame(loop);
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>NEON MINE — 霓虹扫雷</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ===== 全局：合成波 OutRun 风格 ===== */
+:root{
+  --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8; --gold:#ffd95e; --green:#5effa0;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;}
+body{
+  background:linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+  font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+  color:#fff; display:flex; align-items:center; justify-content:center;
+  user-select:none; touch-action:manipulation;
+}
+/* CRT 扫描线 */
+#crt{position:fixed;inset:0;pointer-events:none;z-index:50;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,0.14) 0px,rgba(0,0,0,0.14) 1px,transparent 2px,transparent 3px);
+  mix-blend-mode:multiply;opacity:.55;}
+#wrap{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:12px;max-width:100vw;max-height:100vh;}
+/* HUD */
+#hud{display:flex;gap:14px;align-items:center;justify-content:center;flex-wrap:wrap;
+  font-family:'Press Start 2P',monospace;font-size:11px;}
+.badge{padding:7px 10px;border:2px solid var(--cyan);background:rgba(22,10,54,.6);
+  box-shadow:4px 4px 0 var(--pink);color:var(--cyan);white-space:nowrap;}
+.badge.gold{border-color:var(--gold);color:var(--gold);box-shadow:4px 4px 0 var(--magenta);}
+.badge.pink{border-color:var(--pink);color:var(--pink);box-shadow:4px 4px 0 var(--cyan);}
+#title{font-family:'Press Start 2P',monospace;font-size:18px;color:var(--magenta);
+  text-shadow:0 0 8px var(--pink),3px 3px 0 #160a36;letter-spacing:1px;margin:2px 0;}
+button.nb{font-family:'Press Start 2P',monospace;font-size:10px;cursor:pointer;
+  padding:8px 11px;border:2px solid var(--gold);background:rgba(22,10,54,.7);color:var(--gold);
+  box-shadow:4px 4px 0 var(--pink);transition:transform .05s;}
+button.nb:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--pink);}
+#cv{display:block;background:rgba(10,4,26,.45);border:3px solid var(--magenta);
+  box-shadow:6px 6px 0 var(--cyan),0 0 22px rgba(255,46,136,.5);touch-action:none;}
+/* 遮罩 */
+.mask{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;text-align:center;
+  background:radial-gradient(ellipse at center,rgba(22,10,54,.78),rgba(10,4,26,.94));}
+.mask h1{font-family:'Press Start 2P',monospace;font-size:24px;margin:0;
+  color:var(--cyan);text-shadow:0 0 10px var(--cyan),4px 4px 0 var(--pink);}
+.mask h1.lose{color:var(--pink);text-shadow:0 0 10px var(--pink),4px 4px 0 var(--cyan);}
+.mask h1.win{color:var(--green);text-shadow:0 0 10px var(--green),4px 4px 0 var(--magenta);}
+.mask p{font-family:'Chakra Petch';font-size:15px;max-width:340px;line-height:1.6;color:#ffd6f0;}
+.hide{display:none!important;}
+.mute-on{opacity:.5;}
+@media(max-width:520px){#title{font-size:14px;}#hud{font-size:9px;}.badge{padding:5px 7px;}}
+</style>
+</head>
+<body>
+<div id="crt"></div>
+<div id="wrap">
+  <div id="title">◈ NEON MINE ◈</div>
+  <div id="hud">
+    <div class="badge pink" id="hMines">雷 40</div>
+    <div class="badge" id="hTime">时间 000</div>
+    <div class="badge gold" id="hScore">分 0</div>
+    <div class="badge gold" id="hBest">最高 0</div>
+    <button class="nb" id="bNew">新盘</button>
+    <button class="nb" id="bFlag">🚩 模式</button>
+    <button class="nb" id="bMute">🔊</button>
+  </div>
+  <canvas id="cv"></canvas>
+
+  <!-- 开始遮罩 -->
+  <div class="mask" id="mStart">
+    <h1>NEON MINE</h1>
+    <p>12×16 网格 · 40 雷 · 适中难度<br>
+    左键翻开 · 右键/长按 标雷 · 首点保证安全<br>
+    数字=周围雷数,空格自动连锁展开</p>
+    <button class="nb" id="bStart">▶ 开始游戏</button>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div class="mask hide" id="mEnd">
+    <h1 id="endTitle">GAME OVER</h1>
+    <p id="endMsg"></p>
+    <button class="nb" id="bAgain">↻ 重开新盘</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================
+   霓虹扫雷 NEON MINE — 合成波 OutRun
+   原生 Canvas 2D · 程序化音效 · ?demo AI · ?record 录制
+   ========================================================= */
+(function(){
+const COLS=16, ROWS=12, MINES=40;     // 适中难度 12行16列 40雷
+const NEON={pink:'#ff2e88',cyan:'#5ef0ff',magenta:'#ff5ec8',gold:'#ffd95e',green:'#5effa0'};
+// 数字配色(1..8)
+const NUMCOL=['', '#5ef0ff','#5effa0','#ffd95e','#ff5ec8','#ff9a4d','#7a9bff','#ffffff','#ff2e88'];
+
+const params=new URLSearchParams(location.search);
+const DEMO = params.has('demo') || params.has('record');
+const RECORD_SEC = params.has('record') ? Math.max(1, parseInt(params.get('record')||'20',10)) : 0;
+
+// ---- DOM ----
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const hMines=document.getElementById('hMines'), hTime=document.getElementById('hTime');
+const hScore=document.getElementById('hScore'), hBest=document.getElementById('hBest');
+const mStart=document.getElementById('mStart'), mEnd=document.getElementById('mEnd');
+const endTitle=document.getElementById('endTitle'), endMsg=document.getElementById('endMsg');
+const bMute=document.getElementById('bMute'), bFlag=document.getElementById('bFlag');
+
+// ---- 状态 ----
+let cell=40;            // 像素格尺寸(自适应)
+let grid=[];            // {mine,adj,open,flag,wrong,boom,reveal(动画0..1)}
+let firstClick=true;
+let alive=true, won=false, started=false;
+let flagsLeft=MINES, openedCount=0;
+let timeSec=0, timeAcc=0;
+let score=0, best=+(localStorage.getItem('neonMineBest')||0);
+let flagMode=false;     // 触屏标雷模式
+let muted=false;
+let particles=[];       // 爆炸/翻开粒子
+let t=0;                // 全局时间(秒)用于霓虹脉动
+
+hBest.textContent='最高 '+best;
+
+/* ================= 音频(Web Audio 程序化) ================= */
+let actx=null, masterGain=null, musicTimer=null, musicStep=0;
+function initAudio(){
+  if(actx) return;
+  try{
+    actx=new (window.AudioContext||window.webkitAudioContext)();
+    masterGain=actx.createGain(); masterGain.gain.value=muted?0:0.5; masterGain.connect(actx.destination);
+    startMusic();
+  }catch(e){ actx=null; }
+}
+function resumeAudio(){ if(actx&&actx.state==='suspended') actx.resume(); }
+function beep(freq,dur,type,vol,glide){
+  if(!actx||muted) return;
+  try{
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type=type||'square'; o.frequency.value=freq;
+    if(glide) o.frequency.exponentialRampToValueAtTime(Math.max(40,glide), actx.currentTime+dur);
+    g.gain.setValueAtTime(0.0001,actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(vol||0.2, actx.currentTime+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur);
+    o.connect(g); g.connect(masterGain); o.start(); o.stop(actx.currentTime+dur+0.02);
+  }catch(e){}
+}
+function sOpen(){ beep(420+Math.random()*60,0.07,'square',0.12); }
+function sFlag(){ beep(700,0.06,'triangle',0.18); beep(980,0.06,'triangle',0.12); }
+function sChord(){ beep(520,0.05,'square',0.12); }
+function sWin(){ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>beep(f,0.18,'square',0.22),i*120)); }
+function sLose(){ beep(220,0.5,'sawtooth',0.3,55); setTimeout(()=>beep(110,0.6,'sawtooth',0.25,40),120); }
+// 合成波 bass+arp 循环
+const BASS=[55,55,82.4,49]; // A1 A1 E2 G1
+const ARP=[440,554,659,880,659,554];
+function startMusic(){
+  if(musicTimer) clearInterval(musicTimer);
+  musicStep=0;
+  musicTimer=setInterval(()=>{
+    if(!actx||muted) {musicStep++;return;}
+    const b=BASS[Math.floor(musicStep/4)%BASS.length];
+    if(musicStep%4===0) beep(b,0.42,'sawtooth',0.10,b);
+    beep(ARP[musicStep%ARP.length]/2,0.16,'triangle',0.05);
+    if(musicStep%8===0) beep(b*2,0.3,'square',0.04);
+    musicStep++;
+  },220);
+}
+
+/* ================= 棋盘逻辑 ================= */
+function newBoard(){
+  grid=[];
+  for(let r=0;r<ROWS;r++){
+    const row=[];
+    for(let c=0;c<COLS;c++) row.push({mine:false,adj:0,open:false,flag:false,wrong:false,boom:false,reveal:0});
+    grid.push(row);
+  }
+  firstClick=true; alive=true; won=false;
+  flagsLeft=MINES; openedCount=0; timeSec=0; timeAcc=0; score=0;
+  particles=[];
+  updateHUD();
+}
+function inB(r,c){ return r>=0&&r<ROWS&&c>=0&&c<COLS; }
+function neighbors(r,c){
+  const out=[];
+  for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+    if(dr===0&&dc===0)continue;
+    if(inB(r+dr,c+dc)) out.push([r+dr,c+dc]);
+  }
+  return out;
+}
+function placeMines(safeR,safeC){
+  // 安全区:首点及其周围8格不放雷
+  const ban=new Set();
+  ban.add(safeR+'_'+safeC);
+  neighbors(safeR,safeC).forEach(([r,c])=>ban.add(r+'_'+c));
+  let placed=0;
+  while(placed<MINES){
+    const r=Math.floor(Math.random()*ROWS), c=Math.floor(Math.random()*COLS);
+    if(grid[r][c].mine) continue;
+    if(ban.has(r+'_'+c)) continue;
+    grid[r][c].mine=true; placed++;
+  }
+  // 计算邻接数
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    if(grid[r][c].mine) continue;
+    let n=0; neighbors(r,c).forEach(([nr,nc])=>{ if(grid[nr][nc].mine)n++; });
+    grid[r][c].adj=n;
+  }
+}
+function openCell(r,c){
+  const g=grid[r][c];
+  if(g.open||g.flag||!alive) return;
+  if(firstClick){ placeMines(r,c); firstClick=false; }
+  if(g.mine){
+    g.open=true; g.boom=true; explode(r,c,true);
+    gameOver(false); return;
+  }
+  // 洪水填充(BFS)展开空格
+  const stack=[[r,c]];
+  while(stack.length){
+    const [cr,cc]=stack.pop();
+    const cg=grid[cr][cc];
+    if(cg.open||cg.flag) continue;
+    cg.open=true; cg.reveal=0; openedCount++;
+    burst(cr,cc);
+    if(cg.adj===0){
+      neighbors(cr,cc).forEach(([nr,nc])=>{
+        const ng=grid[nr][nc];
+        if(!ng.open&&!ng.mine&&!ng.flag) stack.push([nr,nc]);
+      });
+    }
+  }
+  score += 5; updateHUD();
+  sOpen();
+  checkWin();
+}
+function chord(r,c){
+  // 和弦:已开数字格,周围旗数==数字 -> 翻开其余
+  const g=grid[r][c];
+  if(!g.open||g.adj===0) return;
+  let f=0; neighbors(r,c).forEach(([nr,nc])=>{ if(grid[nr][nc].flag)f++; });
+  if(f===g.adj){
+    sChord();
+    neighbors(r,c).forEach(([nr,nc])=>{ if(!grid[nr][nc].flag&&!grid[nr][nc].open) openCell(nr,nc); });
+  }
+}
+function toggleFlag(r,c){
+  const g=grid[r][c];
+  if(g.open||!alive) return;
+  g.flag=!g.flag;
+  flagsLeft += g.flag?-1:1;
+  sFlag(); updateHUD();
+}
+function checkWin(){
+  if(openedCount === ROWS*COLS - MINES && alive){
+    won=true; alive=false;
+    // 自动给所有雷插旗
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++) if(grid[r][c].mine) grid[r][c].flag=true;
+    flagsLeft=0;
+    const bonus=Math.max(0, 1000 - timeSec*5);
+    score += 500 + bonus;
+    if(score>best){ best=score; localStorage.setItem('neonMineBest',best); }
+    updateHUD();
+    sWin();
+    showEnd(true);
+  }
+}
+function gameOver(_){
+  alive=false; won=false;
+  // 揭示所有雷,错误旗标红
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const g=grid[r][c];
+    if(g.mine&&!g.flag) g.open=true;
+    if(!g.mine&&g.flag) g.wrong=true;
+  }
+  if(score>best){ best=score; localStorage.setItem('neonMineBest',best); }
+  updateHUD();
+  sLose();
+  showEnd(false);
+}
+function updateHUD(){
+  hMines.textContent='雷 '+flagsLeft;
+  hTime.textContent='时间 '+String(Math.min(999,timeSec)).padStart(3,'0');
+  hScore.textContent='分 '+score;
+  hBest.textContent='最高 '+best;
+}
+
+/* ================= 粒子 ================= */
+function burst(r,c){
+  const x=c*cell+cell/2, y=r*cell+cell/2;
+  for(let i=0;i<4;i++){
+    particles.push({x,y,vx:(Math.random()-.5)*60,vy:(Math.random()-.5)*60,
+      life:.4,max:.4,col:NEON.cyan,size:2});
+  }
+}
+function explode(r,c,big){
+  const x=c*cell+cell/2, y=r*cell+cell/2;
+  const n=big?40:10;
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, sp=40+Math.random()*180;
+    particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:.8,max:.8,col:i%2?NEON.pink:NEON.gold,size:2+Math.random()*3});
+  }
+}
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=120*dt; p.life-=dt;
+    if(p.life<=0) particles.splice(i,1);
+  }
+}
+
+/* ================= 自适应尺寸 ================= */
+function fitSize(){
+  // 依据视口算格子尺寸
+  const availW=Math.min(window.innerWidth-24, 920);
+  const availH=window.innerHeight-150;
+  const cw=Math.floor(availW/COLS), ch=Math.floor(availH/ROWS);
+  let nc=Math.max(20, Math.min(cw,ch,52));
+  const newW=nc*COLS, newH=nc*ROWS;
+  // 仅在真正变化时重设(录制期间避免清画布)
+  if(cv.width!==newW||cv.height!==newH){
+    cv.width=newW; cv.height=newH; cell=nc;
+  }
+}
+
+/* ================= 绘制 ================= */
+function draw(){
+  const W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  // 背景网格暗格
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++) drawCell(r,c);
+  // 网格霓虹分隔线脉动
+  const pulse=0.5+0.5*Math.sin(t*2);
+  ctx.save();
+  ctx.globalAlpha=0.25+0.2*pulse;
+  ctx.strokeStyle=NEON.magenta; ctx.lineWidth=1;
+  ctx.beginPath();
+  for(let c=0;c<=COLS;c++){ ctx.moveTo(c*cell,0); ctx.lineTo(c*cell,H); }
+  for(let r=0;r<=ROWS;r++){ ctx.moveTo(0,r*cell); ctx.lineTo(W,r*cell); }
+  ctx.stroke();
+  ctx.restore();
+  // 粒子
+  for(const p of particles){
+    ctx.save();
+    ctx.globalAlpha=Math.max(0,p.life/p.max);
+    ctx.fillStyle=p.col; ctx.shadowColor=p.col; ctx.shadowBlur=8;
+    ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size);
+    ctx.restore();
+  }
+}
+function drawCell(r,c){
+  const g=grid[r][c];
+  const x=c*cell, y=r*cell, s=cell;
+  const pad=2;
+  if(!g.open){
+    // 凸起霓虹格
+    g.reveal = Math.min(1, g.reveal);
+    const glow=0.4+0.3*Math.sin(t*3+(r+c));
+    ctx.fillStyle='rgba(40,16,80,0.85)';
+    ctx.fillRect(x+pad,y+pad,s-pad*2,s-pad*2);
+    ctx.strokeStyle=NEON.cyan; ctx.lineWidth=1.5;
+    ctx.shadowColor=NEON.cyan; ctx.shadowBlur=6*glow;
+    ctx.strokeRect(x+pad+1,y+pad+1,s-pad*2-2,s-pad*2-2);
+    ctx.shadowBlur=0;
+    // 高光角
+    ctx.strokeStyle='rgba(255,94,200,0.5)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x+pad+2,y+s-pad-2); ctx.lineTo(x+pad+2,y+pad+2); ctx.lineTo(x+s-pad-2,y+pad+2); ctx.stroke();
+    if(g.flag){
+      drawFlag(x,y,s,g.wrong);
+    }
+  }else{
+    // 已开:凹陷
+    if(g.mine){
+      // 雷
+      ctx.fillStyle= g.boom?'rgba(255,46,136,0.9)':'rgba(20,8,40,0.9)';
+      ctx.fillRect(x+pad,y+pad,s-pad*2,s-pad*2);
+      drawMine(x,y,s,g.boom);
+    }else{
+      ctx.fillStyle='rgba(14,6,30,0.55)';
+      ctx.fillRect(x+pad,y+pad,s-pad*2,s-pad*2);
+      ctx.strokeStyle='rgba(94,240,255,0.18)'; ctx.lineWidth=1;
+      ctx.strokeRect(x+pad+1,y+pad+1,s-pad*2-2,s-pad*2-2);
+      if(g.adj>0){
+        const col=NUMCOL[g.adj];
+        ctx.save();
+        ctx.font='bold '+Math.floor(s*0.5)+"px 'Press Start 2P',monospace";
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=8;
+        ctx.fillText(g.adj, x+s/2, y+s/2+1);
+        ctx.restore();
+      }
+    }
+  }
+  if(g.wrong){
+    // 错误旗:红X
+    ctx.strokeStyle=NEON.pink; ctx.lineWidth=3; ctx.shadowColor=NEON.pink; ctx.shadowBlur=8;
+    ctx.beginPath();
+    ctx.moveTo(x+pad+4,y+pad+4); ctx.lineTo(x+s-pad-4,y+s-pad-4);
+    ctx.moveTo(x+s-pad-4,y+pad+4); ctx.lineTo(x+pad+4,y+s-pad-4);
+    ctx.stroke(); ctx.shadowBlur=0;
+  }
+}
+function drawFlag(x,y,s,wrong){
+  const cx=x+s*0.36, top=y+s*0.22, h=s*0.42;
+  ctx.save();
+  // 旗杆
+  ctx.strokeStyle=wrong?NEON.cyan:NEON.gold; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(cx,top); ctx.lineTo(cx,top+h); ctx.stroke();
+  // 旗布
+  ctx.fillStyle=NEON.pink; ctx.shadowColor=NEON.pink; ctx.shadowBlur=8;
+  ctx.beginPath();
+  ctx.moveTo(cx,top); ctx.lineTo(cx+s*0.3,top+s*0.12); ctx.lineTo(cx,top+s*0.24);
+  ctx.closePath(); ctx.fill();
+  // 底座
+  ctx.shadowBlur=0; ctx.fillStyle=wrong?NEON.cyan:NEON.gold;
+  ctx.fillRect(cx-s*0.12,top+h,s*0.24,s*0.05);
+  ctx.restore();
+}
+function drawMine(x,y,s,boom){
+  const cx=x+s/2, cy=y+s/2, rad=s*0.22;
+  ctx.save();
+  const col=boom?NEON.gold:NEON.cyan;
+  ctx.fillStyle=col; ctx.shadowColor=col; ctx.shadowBlur=boom?16:8;
+  ctx.beginPath(); ctx.arc(cx,cy,rad,0,Math.PI*2); ctx.fill();
+  // 尖刺
+  ctx.strokeStyle=col; ctx.lineWidth=2;
+  for(let a=0;a<8;a++){
+    const ang=a*Math.PI/4;
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(ang)*rad,cy+Math.sin(ang)*rad);
+    ctx.lineTo(cx+Math.cos(ang)*rad*1.7,cy+Math.sin(ang)*rad*1.7);
+    ctx.stroke();
+  }
+  ctx.shadowBlur=0; ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(cx-rad*0.3,cy-rad*0.3,rad*0.3,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+/* ================= 输入 ================= */
+function cellFromEvent(e){
+  const rect=cv.getBoundingClientRect();
+  const px=(e.clientX-rect.left)*(cv.width/rect.width);
+  const py=(e.clientY-rect.top)*(cv.height/rect.height);
+  const c=Math.floor(px/cell), r=Math.floor(py/cell);
+  if(!inB(r,c)) return null;
+  return [r,c];
+}
+let longTimer=null, longFired=false;
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('mousedown',e=>{
+  if(DEMO||!started||!alive) return;
+  initAudio(); resumeAudio();
+  const rc=cellFromEvent(e); if(!rc) return;
+  const [r,c]=rc;
+  if(e.button===2){ toggleFlag(r,c); }
+  else if(e.button===0){
+    if(flagMode){ toggleFlag(r,c); }
+    else if(grid[r][c].open){ chord(r,c); }
+    else { openCell(r,c); }
+  }
+});
+// 触屏:长按标雷
+cv.addEventListener('touchstart',e=>{
+  if(DEMO||!started||!alive) return;
+  initAudio(); resumeAudio();
+  e.preventDefault();
+  const tch=e.changedTouches[0];
+  const rc=cellFromEvent(tch); if(!rc) return;
+  const [r,c]=rc;
+  longFired=false;
+  longTimer=setTimeout(()=>{ longFired=true; toggleFlag(r,c); },420);
+},{passive:false});
+cv.addEventListener('touchend',e=>{
+  if(DEMO||!started||!alive) return;
+  e.preventDefault();
+  if(longTimer){ clearTimeout(longTimer); longTimer=null; }
+  if(longFired) return;
+  const tch=e.changedTouches[0];
+  const rc=cellFromEvent(tch); if(!rc) return;
+  const [r,c]=rc;
+  if(flagMode){ toggleFlag(r,c); }
+  else if(grid[r][c].open){ chord(r,c); }
+  else { openCell(r,c); }
+},{passive:false});
+cv.addEventListener('touchmove',e=>{ if(longTimer){clearTimeout(longTimer);longTimer=null;} },{passive:false});
+
+// 按钮
+document.getElementById('bNew').onclick=()=>{ initAudio();resumeAudio(); newBoard(); started=true; mStart.classList.add('hide'); mEnd.classList.add('hide'); };
+document.getElementById('bStart').onclick=()=>{ initAudio();resumeAudio(); newBoard(); started=true; mStart.classList.add('hide'); mEnd.classList.add('hide'); };
+document.getElementById('bAgain').onclick=()=>{ initAudio();resumeAudio(); newBoard(); started=true; mEnd.classList.add('hide'); };
+bFlag.onclick=()=>{ flagMode=!flagMode; bFlag.style.background=flagMode?'rgba(255,46,136,0.5)':'rgba(22,10,54,.7)'; };
+bMute.onclick=()=>{ muted=!muted; bMute.textContent=muted?'🔇':'🔊'; bMute.classList.toggle('mute-on',muted); if(masterGain) masterGain.gain.value=muted?0:0.5; };
+// 键盘:N新盘 F标雷模式 M静音
+window.addEventListener('keydown',e=>{
+  if(e.key==='n'||e.key==='N'){ initAudio();resumeAudio(); newBoard(); started=true; mStart.classList.add('hide'); mEnd.classList.add('hide'); }
+  if(e.key==='f'||e.key==='F'){ bFlag.onclick(); }
+  if(e.key==='m'||e.key==='M'){ bMute.onclick(); }
+});
+
+function showEnd(win){
+  endTitle.textContent = win?'YOU WIN!':'GAME OVER';
+  endTitle.className = win?'win':'lose';
+  endMsg.innerHTML = win
+    ? `通关!得分 <b style="color:${NEON.gold}">${score}</b> · 用时 ${timeSec}s<br>最高分 ${best}`
+    : `踩雷了…得分 <b style="color:${NEON.pink}">${score}</b><br>最高分 ${best}`;
+  mEnd.classList.remove('hide');
+  if(!DEMO){
+    // 普通模式不自动重开
+  }
+}
+
+/* ================= AI 自动演示 ================= */
+let aiTimer=0;
+const AI_INTERVAL=0.32; // 每步间隔
+function aiStep(){
+  if(!alive){ return; }
+  // 首点:中心附近
+  if(firstClick){
+    openCell(Math.floor(ROWS/2),Math.floor(COLS/2));
+    return;
+  }
+  // 收集边界已开数字格,做确定性推理
+  let acted=false;
+  for(let r=0;r<ROWS&&!acted;r++)for(let c=0;c<COLS&&!acted;c++){
+    const g=grid[r][c];
+    if(!g.open||g.adj===0) continue;
+    const nb=neighbors(r,c);
+    let flagged=0, hidden=[];
+    nb.forEach(([nr,nc])=>{
+      const ng=grid[nr][nc];
+      if(ng.flag) flagged++;
+      else if(!ng.open) hidden.push([nr,nc]);
+    });
+    if(hidden.length===0) continue;
+    // 规则1:数字==旗数 -> 翻开其余隐藏(安全)
+    if(flagged===g.adj && hidden.length>0){
+      hidden.forEach(([nr,nc])=>{ if(alive) openCell(nr,nc); });
+      acted=true; break;
+    }
+    // 规则2:数字-旗数==隐藏数 -> 全标雷
+    if(g.adj-flagged===hidden.length){
+      hidden.forEach(([nr,nc])=>{ if(!grid[nr][nc].flag) toggleFlag(nr,nc); });
+      acted=true; break;
+    }
+  }
+  if(acted) return;
+  // 无确定步:在概率较低的隐藏格随机翻开
+  aiGuess();
+}
+function aiGuess(){
+  // 计算每个隐藏未标格的"邻接数字约束"估计雷概率,取最低者
+  let best=null, bestP=2;
+  const cand=[];
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){
+    const g=grid[r][c];
+    if(g.open||g.flag) continue;
+    // 概率估计:对每个相邻已开数字格 p=(adj-flag)/hidden,取最大(最危险),再选全局最小
+    let p=null;
+    neighbors(r,c).forEach(([nr,nc])=>{
+      const ng=grid[nr][nc];
+      if(ng.open&&ng.adj>0){
+        let f=0,h=0;
+        neighbors(nr,nc).forEach(([ar,ac])=>{
+          if(grid[ar][ac].flag)f++; else if(!grid[ar][ac].open)h++;
+        });
+        if(h>0){ const lp=(ng.adj-f)/h; if(p===null||lp>p) p=lp; }
+      }
+    });
+    if(p===null){ cand.push([r,c]); } // 无约束格,优先(角落/远离)
+    else if(p<bestP){ bestP=p; best=[r,c]; }
+  }
+  if(cand.length){
+    const pick=cand[Math.floor(Math.random()*cand.length)];
+    openCell(pick[0],pick[1]); return;
+  }
+  if(best){ openCell(best[0],best[1]); }
+}
+
+/* ================= 主循环 ================= */
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  t+=dt;
+  // update
+  try{
+    if(started && alive && !firstClick){ timeAcc+=dt; if(timeAcc>=1){timeAcc-=1;timeSec=Math.min(999,timeSec+1);updateHUD();} }
+    updateParticles(dt);
+    if(DEMO && started){
+      aiTimer+=dt;
+      if(aiTimer>=AI_INTERVAL){
+        aiTimer=0;
+        if(alive){ aiStep(); }
+      }
+      if(!alive){
+        demoRestartTimer+=dt;
+        if(demoRestartTimer>1.6){ demoRestartTimer=0; newBoard(); mEnd.classList.add('hide'); started=true; }
+      }
+    }
+  }catch(e){ /* update 异常保护 */ }
+  // draw
+  try{ draw(); }catch(e){ /* draw 异常保护 */ }
+  requestAnimationFrame(loop);
+}
+let demoRestartTimer=0;
+
+/* ================= 录制 ================= */
+function startRecord(){
+  try{
+    const stream=cv.captureStream(30);
+    if(!stream.getVideoTracks().length){ console.warn('无视频轨'); return; }
+    let mt='video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[];
+    mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{
+      const b=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+      a.download='neon-mine.webm'; document.body.appendChild(a);
+      try{a.click()}catch(e){}
+    };
+    mr.start(250);
+    setTimeout(()=>{ try{mr.stop()}catch(e){} }, RECORD_SEC*1000);
+  }catch(e){ console.warn('录制失败',e); }
+}
+
+/* ================= 启动 ================= */
+function boot(){
+  fitSize();
+  newBoard();
+  if(DEMO){
+    // 免手势开局
+    started=true; mStart.classList.add('hide');
+    try{ initAudio(); }catch(e){}
+    if(RECORD_SEC>0){
+      // 确认尺寸有效后录制
+      fitSize();
+      setTimeout(startRecord, 300);
+    }
+  }
+  requestAnimationFrame(loop);
+}
+window.addEventListener('resize',()=>{ fitSize(); });
+boot();
+})();
+</script>
+</body>
+</html>

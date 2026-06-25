@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<!-- 移动端自适应视口 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>霓虹手势接落物 · NEON HAND CATCH</title>
+<!-- Google Fonts:像素字 + 界面字 -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ============ 合成波 OutRun 配色变量 ============ */
+  :root{
+    --pink:#ff2e88;
+    --cyan:#5ef0ff;
+    --magenta:#ff5ec8;
+    --gold:#ffd95e;
+    --green:#5effa0;
+    --bg0:#1a0b2e;   /* 深紫 */
+    --bg1:#2b0f4a;
+    --bg2:#3d1361;
+    --sun:#ff6b9d;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#0a0418; }
+  body{
+    font-family:'Chakra Petch','Microsoft YaHei',system-ui,sans-serif;
+    color:#fff;
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  #wrap{ position:fixed; inset:0; }
+
+  /* 视频背景(镜像、半透明) */
+  #cam{
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover;
+    transform:scaleX(-1);     /* 镜像,像照镜子 */
+    opacity:0.30;
+    filter:saturate(1.3) hue-rotate(-10deg);
+  }
+  /* 游戏画布 */
+  #game{ position:absolute; inset:0; width:100%; height:100%; }
+
+  /* ============ HUD ============ */
+  #hud{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:14px 16px; pointer-events:none;
+    font-family:'Press Start 2P',monospace;
+    text-shadow:0 0 8px currentColor;
+    z-index:5;
+  }
+  .hud-col{ display:flex; flex-direction:column; gap:8px; }
+  .hud-right{ align-items:flex-end; }
+  #score{ color:var(--cyan); font-size:14px; }
+  #best{ color:var(--gold); font-size:9px; opacity:.9; }
+  #lives{ color:var(--pink); font-size:16px; letter-spacing:2px; }
+  #level{ color:var(--green); font-size:9px; }
+  #srcTag{
+    font-family:'Chakra Petch',sans-serif; font-size:12px; font-weight:600;
+    color:var(--magenta); text-shadow:0 0 6px var(--magenta);
+    margin-top:4px; pointer-events:none;
+  }
+
+  /* 静音按钮 */
+  #mute{
+    position:absolute; top:12px; left:50%; transform:translateX(-50%);
+    z-index:6; pointer-events:auto;
+    background:rgba(20,8,40,.6); border:2px solid var(--cyan);
+    color:var(--cyan); border-radius:10px; padding:6px 10px;
+    font-family:'Press Start 2P',monospace; font-size:9px; cursor:pointer;
+    box-shadow:0 0 10px var(--cyan); transition:transform .1s;
+  }
+  #mute:active{ transform:translateX(-50%) scale(.92); }
+
+  /* ============ 遮罩 ============ */
+  .overlay{
+    position:absolute; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    background:radial-gradient(ellipse at 50% 35%, rgba(61,19,97,.92), rgba(10,4,24,.97));
+    backdrop-filter:blur(2px);
+  }
+  .overlay.hidden{ display:none; }
+  .title{
+    font-family:'Press Start 2P',monospace;
+    font-size:clamp(18px,5.2vw,40px); line-height:1.5;
+    color:var(--pink); text-shadow:0 0 14px var(--pink),0 0 28px var(--magenta);
+    margin-bottom:6px;
+  }
+  .subtitle{
+    font-family:'Press Start 2P',monospace; font-size:clamp(9px,2.4vw,13px);
+    color:var(--cyan); text-shadow:0 0 10px var(--cyan); margin-bottom:18px;
+  }
+  .card{
+    max-width:560px; width:100%;
+    background:rgba(20,8,40,.55); border:2px solid var(--magenta);
+    border-radius:14px; padding:18px 20px; margin-bottom:18px;
+    box-shadow:0 0 22px rgba(255,94,200,.4), inset 0 0 18px rgba(94,240,255,.08);
+    font-size:15px; line-height:1.65;
+  }
+  .card h3{ color:var(--gold); font-size:14px; letter-spacing:1px; margin-bottom:8px; text-shadow:0 0 8px var(--gold);}
+  .card p{ margin:5px 0; color:#e9e0ff; }
+  .card .k{ color:var(--cyan); font-weight:700; }
+  .card .warn{ color:var(--gold); font-size:13px; opacity:.95; }
+  .btn{
+    font-family:'Press Start 2P',monospace; font-size:13px;
+    color:#10031f; background:linear-gradient(180deg,var(--cyan),var(--green));
+    border:none; border-radius:12px; padding:16px 26px; cursor:pointer;
+    box-shadow:0 0 18px var(--cyan),0 6px 0 #1c7a86; transition:transform .08s, box-shadow .08s;
+  }
+  .btn:active{ transform:translateY(3px); box-shadow:0 0 18px var(--cyan),0 2px 0 #1c7a86; }
+  .btn.alt{ background:linear-gradient(180deg,var(--gold),var(--pink)); box-shadow:0 0 18px var(--gold),0 6px 0 #8a4a2a; margin-top:12px;}
+  .hint{ margin-top:14px; font-size:12px; color:#bfa9e6; max-width:520px; line-height:1.5;}
+  .hint b{ color:var(--green); }
+  #bigScore{ font-family:'Press Start 2P',monospace; color:var(--gold); font-size:22px; text-shadow:0 0 12px var(--gold); margin:6px 0 4px;}
+  #endMsg{ color:var(--cyan); font-size:13px; margin-bottom:10px;}
+  .row{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <!-- 摄像头镜像背景 -->
+  <video id="cam" playsinline muted autoplay></video>
+  <!-- 游戏渲染层 -->
+  <canvas id="game"></canvas>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-col">
+      <div id="score">0</div>
+      <div id="best">BEST 0</div>
+      <div id="srcTag">初始化…</div>
+    </div>
+    <div class="hud-col hud-right">
+      <div id="lives">♥ ♥ ♥</div>
+      <div id="level">LV 1</div>
+    </div>
+  </div>
+  <button id="mute" aria-label="静音切换">🔊 SOUND</button>
+
+  <!-- 开始遮罩 -->
+  <div id="startScreen" class="overlay">
+    <div class="title">NEON HAND</div>
+    <div class="subtitle">隔空接落物 · CATCH</div>
+    <div class="card">
+      <h3>玩法 HOW TO PLAY</h3>
+      <p>霓虹方块与星星从顶部不断<span class="k">落下</span>。</p>
+      <p>左右移动你的<span class="k">手</span>(食指/手掌),控制屏幕底部的霓虹接篮去<span class="k">接住</span>它们得分。</p>
+      <p>漏接会<span class="k">扣 1 命</span>,共 3 命;速度会越来越快。</p>
+      <p class="warn">需要权限:摄像头(用于手势检测)。画面会镜像作半透明背景。</p>
+    </div>
+    <div class="row">
+      <button id="btnCam" class="btn">📷 允许摄像头开始</button>
+      <button id="btnKey" class="btn alt">🖱️ 用鼠标/方向键玩</button>
+    </div>
+    <div class="hint">
+      建议使用 <b>Chrome / Edge</b> 桌面浏览器以获得最佳手势体验。<br/>
+      若没有摄像头或拒绝授权,会自动切到<b>鼠标移动 / ← → 方向键</b>兜底操作,照样能玩。
+    </div>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div id="endScreen" class="overlay hidden">
+    <div class="title" style="color:var(--gold);text-shadow:0 0 14px var(--gold)">GAME OVER</div>
+    <div id="bigScore">0</div>
+    <div id="endMsg"></div>
+    <div class="row">
+      <button id="btnRestart" class="btn">↻ 再来一局</button>
+    </div>
+    <div class="hint">提示:站远一点、手在画面中清晰可见,检测更稳。</div>
+  </div>
+</div>
+
+<!-- MediaPipe Hands CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+"use strict";
+/* =========================================================================
+   霓虹手势接落物  —  合成波 OutRun 风格
+   控制优先级:手势(MediaPipe Hands) > 鼠标/触摸 > 方向键
+   ========================================================================= */
+
+/* ---------- DOM ---------- */
+const cv      = document.getElementById('game');
+const ctx     = cv.getContext('2d');
+const video   = document.getElementById('cam');
+const elScore = document.getElementById('score');
+const elBest  = document.getElementById('best');
+const elLives = document.getElementById('lives');
+const elLevel = document.getElementById('level');
+const elSrc   = document.getElementById('srcTag');
+const muteBtn = document.getElementById('mute');
+const startScreen = document.getElementById('startScreen');
+const endScreen   = document.getElementById('endScreen');
+const bigScore = document.getElementById('bigScore');
+const endMsg   = document.getElementById('endMsg');
+
+/* ---------- 画布尺寸自适应 ---------- */
+let W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.floor(W * DPR);
+  cv.height = Math.floor(H * DPR);
+  cv.style.width = W + 'px';
+  cv.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ---------- 颜色 ---------- */
+const COL = {
+  pink:'#ff2e88', cyan:'#5ef0ff', magenta:'#ff5ec8',
+  gold:'#ffd95e', green:'#5effa0', sun:'#ff6b9d'
+};
+const FALL_COLORS = [COL.cyan, COL.gold, COL.green, COL.magenta, COL.pink];
+
+/* =========================================================================
+   音频:Web Audio 程序化音效 + 合成波循环配乐
+   ========================================================================= */
+const Audio = (() => {
+  let actx = null, master = null, musicGain = null, sfxGain = null;
+  let muted = false, started = false, loopTimer = null;
+  let step = 0;
+
+  function ensure(){
+    if (actx) return;
+    try{
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      master = actx.createGain(); master.gain.value = 0.9; master.connect(actx.destination);
+      musicGain = actx.createGain(); musicGain.gain.value = 0.16; musicGain.connect(master);
+      sfxGain = actx.createGain();   sfxGain.gain.value = 0.55; sfxGain.connect(master);
+    }catch(e){ console.warn('AudioContext 创建失败', e); }
+  }
+  function resume(){
+    ensure();
+    if (actx && actx.state === 'suspended'){ actx.resume().catch(()=>{}); }
+    if (!started){ started = true; startMusic(); }
+  }
+
+  // 单个振荡音
+  function tone(freq, t0, dur, type, gain, dest){
+    if (!actx) return;
+    const o = actx.createOscillator(); const g = actx.createGain();
+    o.type = type || 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+    o.connect(g); g.connect(dest || sfxGain);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+
+  /* ----- 音效 ----- */
+  function sfxCatch(){
+    if (!actx || muted) return;
+    const t = actx.currentTime;
+    tone(660, t, 0.10, 'square', 0.5);
+    tone(990, t+0.05, 0.12, 'square', 0.45);
+    tone(1320, t+0.11, 0.14, 'triangle', 0.4);
+  }
+  function sfxMiss(){
+    if (!actx || muted) return;
+    const t = actx.currentTime;
+    tone(220, t, 0.18, 'sawtooth', 0.5);
+    tone(150, t+0.08, 0.26, 'sawtooth', 0.5);
+  }
+  function sfxLevel(){
+    if (!actx || muted) return;
+    const t = actx.currentTime;
+    [523,659,784,1046].forEach((f,i)=> tone(f, t+i*0.07, 0.16, 'square', 0.4));
+  }
+  function sfxOver(){
+    if (!actx || muted) return;
+    const t = actx.currentTime;
+    [440,330,262,196].forEach((f,i)=> tone(f, t+i*0.14, 0.3, 'sawtooth', 0.45));
+  }
+
+  /* ----- 合成波循环配乐:低音 + 琶音 ----- */
+  // 小调进行(Am - F - C - G 风格的合成波底)
+  const BASS = [55, 55, 65.41, 65.41, 43.65, 43.65, 49, 49]; // A1 C2 F1 G1
+  const ARP  = [
+    [220,261.63,329.63], [220,261.63,329.63],
+    [174.61,220,261.63], [174.61,220,261.63],
+    [130.81,164.81,196], [130.81,164.81,196],
+    [196,246.94,293.66], [196,246.94,293.66]
+  ];
+  function startMusic(){
+    if (!actx) return;
+    if (loopTimer) clearInterval(loopTimer);
+    const stepDur = 0.32; // 每步时长
+    const schedule = () => {
+      if (muted) { step = (step+1) % 8; return; }
+      const t = actx.currentTime + 0.02;
+      const b = BASS[step % BASS.length];
+      // 低音
+      tone(b, t, stepDur*0.95, 'sawtooth', 0.5, musicGain);
+      tone(b*2, t, stepDur*0.5, 'square', 0.18, musicGain);
+      // 琶音(三连)
+      const chord = ARP[step % ARP.length];
+      chord.forEach((f, i) => tone(f, t + i*0.09, 0.12, 'triangle', 0.16, musicGain));
+      step = (step+1) % 8;
+    };
+    schedule();
+    loopTimer = setInterval(schedule, stepDur*1000);
+  }
+  function setMuted(m){
+    muted = m;
+    if (master) master.gain.value = m ? 0 : 0.9;
+  }
+  function isMuted(){ return muted; }
+
+  return { resume, sfxCatch, sfxMiss, sfxLevel, sfxOver, setMuted, isMuted };
+})();
+
+/* =========================================================================
+   游戏状态
+   ========================================================================= */
+const State = { MENU:0, PLAY:1, OVER:2 };
+let state = State.MENU;
+
+const game = {
+  score:0, best:0, lives:3, level:1,
+  spawnTimer:0, spawnInterval:1.1,
+  fallSpeed:230,           // 像素/秒(基准)
+  items:[],                // 落物
+  particles:[],            // 粒子
+  basket:{ x:0.5, w:130, targetX:0.5 }, // x 为归一化中心(0..1)
+  shake:0,
+  flash:0,                 // 接住时高光
+  time:0
+};
+
+/* 控制源:'hand' | 'mouse' | 'key' | 'none' */
+let controlMode = 'none';
+let handX = null;          // 手的归一化 x(已镜像处理),0..1
+let handVisible = false;
+let mouseX = null;
+let keyDir = 0;            // -1 / 0 / 1
+
+/* localStorage 最高分 */
+try{
+  game.best = parseInt(localStorage.getItem('neonHandBest') || '0', 10) || 0;
+}catch(e){ game.best = 0; }
+elBest.textContent = 'BEST ' + game.best;
+
+/* =========================================================================
+   输入:鼠标 / 触摸 / 键盘(兜底)
+   ========================================================================= */
+window.addEventListener('mousemove', (e)=>{
+  mouseX = e.clientX / Math.max(1, window.innerWidth);
+});
+window.addEventListener('touchmove', (e)=>{
+  if (e.touches && e.touches[0]){
+    mouseX = e.touches[0].clientX / Math.max(1, window.innerWidth);
+  }
+}, { passive:true });
+window.addEventListener('keydown', (e)=>{
+  if (e.key === 'ArrowLeft')  keyDir = -1;
+  if (e.key === 'ArrowRight') keyDir =  1;
+  if ((e.key === ' ' || e.key === 'Enter')){
+    if (state === State.OVER){ startGame(); }
+  }
+});
+window.addEventListener('keyup', (e)=>{
+  if (e.key === 'ArrowLeft'  && keyDir === -1) keyDir = 0;
+  if (e.key === 'ArrowRight' && keyDir ===  1) keyDir = 0;
+});
+
+/* =========================================================================
+   MediaPipe Hands 初始化
+   ========================================================================= */
+let hands = null, mpCamera = null, camStream = null;
+let handReady = false;
+
+function onHandResults(results){
+  try{
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0){
+      const lm = results.multiHandLandmarks[0];
+      // 用食指尖(8)与手掌中心(9)平均,稳一点
+      const tip = lm[8], palm = lm[9];
+      const nx = (tip.x + palm.x) / 2;     // MediaPipe x:0..1,左到右(相对原始视频)
+      // 视频是镜像显示(scaleX(-1)),所以玩家看到的位置 = 1 - nx
+      handX = 1 - nx;
+      handVisible = true;
+    } else {
+      handVisible = false;
+    }
+  }catch(err){ console.warn('hand results 处理出错', err); }
+}
+
+async function initHands(){
+  if (typeof Hands === 'undefined'){
+    throw new Error('MediaPipe Hands 脚本未加载(可能离线或被拦截)');
+  }
+  hands = new Hands({
+    locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  });
+  hands.setOptions({
+    maxNumHands:1,
+    modelComplexity:0,        // 0 更快,适合实时控制
+    minDetectionConfidence:0.6,
+    minTrackingConfidence:0.6
+  });
+  hands.onResults(onHandResults);
+  await hands.initialize();
+  handReady = true;
+}
+
+/* 请求摄像头并启动手势检测 */
+async function startCamera(){
+  elSrc.textContent = '请求摄像头…';
+  // 1) 获取媒体流
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    throw new Error('此浏览器不支持 getUserMedia');
+  }
+  camStream = await navigator.mediaDevices.getUserMedia({
+    video:{ facingMode:'user', width:{ ideal:640 }, height:{ ideal:480 } },
+    audio:false
+  });
+  video.srcObject = camStream;
+  await video.play().catch(()=>{});
+
+  // 2) 初始化手部模型
+  await initHands();
+
+  // 3) 用 MediaPipe camera_utils 持续送帧;若不可用则手动 rAF 兜底
+  if (typeof Camera !== 'undefined'){
+    mpCamera = new Camera(video, {
+      onFrame: async () => {
+        try{ if (hands) await hands.send({ image: video }); }
+        catch(e){ /* 单帧失败忽略 */ }
+      },
+      width:640, height:480
+    });
+    mpCamera.start();
+    controlMode = 'hand';
+  } else {
+    // 手动送帧兜底:先置为 hand 模式,pump 才会持续运行
+    controlMode = 'hand';
+    const pump = async () => {
+      if (controlMode !== 'hand') return;
+      try{ if (hands && video.readyState >= 2) await hands.send({ image: video }); }catch(e){}
+      requestAnimationFrame(pump);
+    };
+    pump();
+  }
+  elSrc.textContent = '🖐 手势控制中';
+}
+
+/* =========================================================================
+   开始 / 兜底 入口
+   ========================================================================= */
+async function beginWithCamera(){
+  Audio.resume();
+  try{
+    await startCamera();
+    startGame();
+  }catch(err){
+    console.warn('摄像头/手势初始化失败,降级到键鼠:', err);
+    fallbackControl('摄像头不可用 → 鼠标/方向键');
+    startGame();
+  }
+}
+function beginWithKeyboard(){
+  Audio.resume();
+  fallbackControl('🖱️ 鼠标 / ← → 控制');
+  startGame();
+}
+function fallbackControl(tag){
+  controlMode = 'mouse';     // 鼠标优先,方向键并存
+  // 视频降级:若没拿到流,把背景换成程序化网格(video opacity 0)
+  if (!camStream){ video.style.display = 'none'; }
+  elSrc.textContent = tag;
+}
+
+/* =========================================================================
+   游戏流程
+   ========================================================================= */
+function startGame(){
+  game.score = 0; game.lives = 3; game.level = 1;
+  game.items.length = 0; game.particles.length = 0;
+  game.spawnTimer = 0; game.spawnInterval = 1.05;
+  game.fallSpeed = 230; game.shake = 0; game.flash = 0; game.time = 0;
+  game.basket.x = 0.5; game.basket.targetX = 0.5;
+  updateHUD();
+  startScreen.classList.add('hidden');
+  endScreen.classList.add('hidden');
+  state = State.PLAY;
+}
+function gameOver(){
+  state = State.OVER;
+  if (game.score > game.best){
+    game.best = game.score;
+    try{ localStorage.setItem('neonHandBest', String(game.best)); }catch(e){}
+  }
+  elBest.textContent = 'BEST ' + game.best;
+  bigScore.textContent = game.score;
+  endMsg.textContent = (game.score >= game.best && game.score>0)
+      ? '★ 新纪录! NEW BEST ★'
+      : '最高分 BEST ' + game.best;
+  Audio.sfxOver();
+  endScreen.classList.remove('hidden');
+}
+
+function updateHUD(){
+  elScore.textContent = game.score;
+  elLevel.textContent = 'LV ' + game.level;
+  let hearts = '';
+  for (let i=0;i<3;i++) hearts += (i < game.lives) ? '♥ ' : '♡ ';
+  elLives.textContent = hearts.trim();
+}
+
+/* =========================================================================
+   生成落物
+   ========================================================================= */
+function spawnItem(){
+  const margin = 0.08;
+  const x = margin + Math.random()*(1-2*margin);
+  const isStar = Math.random() < 0.45;
+  const c = FALL_COLORS[(Math.random()*FALL_COLORS.length)|0];
+  game.items.push({
+    x, y:-40,
+    size: isStar ? 22+Math.random()*8 : 20+Math.random()*10,
+    star:isStar, color:c,
+    rot: Math.random()*Math.PI, vrot:(Math.random()-0.5)*3,
+    vx:(Math.random()-0.5)*40,   // 轻微横移
+    val:isStar ? 2 : 1
+  });
+}
+
+/* =========================================================================
+   粒子
+   ========================================================================= */
+function burst(x, y, color, n){
+  for (let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2, sp = 60+Math.random()*220;
+    game.particles.push({
+      x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - 60,
+      life:0.6+Math.random()*0.4, max:1, color, r:2+Math.random()*3
+    });
+  }
+}
+
+/* =========================================================================
+   更新逻辑
+   ========================================================================= */
+function update(dt){
+  game.time += dt;
+
+  /* ---- 控制源选择:手势 > 鼠标 > 键盘 ---- */
+  let target = game.basket.targetX;
+  if (controlMode === 'hand' && handVisible && handX !== null){
+    target = handX;
+  } else if (controlMode === 'hand' && !handVisible){
+    // 手暂时丢失:允许鼠标接管不动,保持位置
+    target = game.basket.targetX;
+  }
+  // 鼠标(在任意模式下都可微调兜底)
+  if (controlMode !== 'hand' && mouseX !== null){
+    target = mouseX;
+  }
+  // 方向键
+  if (keyDir !== 0){
+    target = game.basket.targetX + keyDir * dt * 1.4;
+  }
+  target = Math.max(0.05, Math.min(0.95, target));
+  game.basket.targetX = target;
+  // 平滑跟随
+  game.basket.x += (game.basket.targetX - game.basket.x) * Math.min(1, dt*14);
+
+  /* ---- 生成 ---- */
+  game.spawnTimer += dt;
+  if (game.spawnTimer >= game.spawnInterval){
+    game.spawnTimer = 0;
+    spawnItem();
+  }
+
+  /* ---- 落物移动与碰撞 ---- */
+  const basketY = H - 86;
+  const bx = game.basket.x * W;
+  const halfW = game.basket.w/2;
+  const speed = game.fallSpeed + game.level*26;
+
+  for (let i=game.items.length-1; i>=0; i--){
+    const it = game.items[i];
+    it.y += speed * dt;
+    it.x += (it.vx * dt) / W;
+    it.x = Math.max(0.04, Math.min(0.96, it.x));
+    it.rot += it.vrot * dt;
+
+    const ix = it.x * W;
+    // 接住判定:进入接篮口的水平+垂直范围
+    if (it.y >= basketY-10 && it.y <= basketY+34){
+      if (Math.abs(ix - bx) <= halfW - 6){
+        // 接住!
+        game.score += it.val;
+        game.flash = 1;
+        burst(ix, basketY, it.color, it.star?18:12);
+        Audio.sfxCatch();
+        game.items.splice(i,1);
+        // 难度递增:每 12 分升级
+        const newLevel = 1 + Math.floor(game.score/12);
+        if (newLevel > game.level){
+          game.level = newLevel;
+          game.spawnInterval = Math.max(0.42, 1.05 - (game.level-1)*0.07);
+          Audio.sfxLevel();
+        }
+        updateHUD();
+        continue;
+      }
+    }
+    // 漏接(落到底部)
+    if (it.y > H + 30){
+      game.items.splice(i,1);
+      game.lives--;
+      game.shake = 1;
+      Audio.sfxMiss();
+      updateHUD();
+      if (game.lives <= 0){ gameOver(); return; }
+    }
+  }
+
+  /* ---- 粒子 ---- */
+  for (let i=game.particles.length-1; i>=0; i--){
+    const p = game.particles[i];
+    p.life -= dt;
+    if (p.life <= 0){ game.particles.splice(i,1); continue; }
+    p.vy += 380*dt;
+    p.x += p.vx*dt; p.y += p.vy*dt;
+  }
+
+  if (game.shake > 0) game.shake = Math.max(0, game.shake - dt*2.5);
+  if (game.flash > 0) game.flash = Math.max(0, game.flash - dt*3.5);
+}
+
+/* =========================================================================
+   渲染
+   ========================================================================= */
+let bgScroll = 0;
+
+function drawBackground(){
+  // 合成波日落渐变
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#2b0f4a');
+  g.addColorStop(0.45,'#3d1361');
+  g.addColorStop(0.62,'#7a1f6b');
+  g.addColorStop(0.75,'#ff6b9d');
+  g.addColorStop(0.82,'#ff9e6b');
+  g.addColorStop(1,'#1a0b2e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  // 太阳
+  const sunY = H*0.52, sunR = Math.min(W,H)*0.16;
+  const sg = ctx.createLinearGradient(0, sunY-sunR, 0, sunY+sunR);
+  sg.addColorStop(0, COL.gold); sg.addColorStop(0.5, COL.sun); sg.addColorStop(1, COL.pink);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(W/2, sunY, sunR, 0, Math.PI*2); ctx.clip();
+  ctx.fillStyle = sg; ctx.fillRect(W/2-sunR, sunY-sunR, sunR*2, sunR*2);
+  // 太阳横纹
+  ctx.fillStyle = 'rgba(26,11,46,0.85)';
+  for (let i=0;i<10;i++){
+    const yy = sunY + i*7 - 2;
+    ctx.fillRect(W/2-sunR, yy + (i*1.4), sunR*2, Math.max(2, i*0.8));
+  }
+  ctx.restore();
+
+  // 透视网格地面
+  const horizon = H*0.62;
+  ctx.strokeStyle = 'rgba(94,240,255,0.32)';
+  ctx.lineWidth = 1.4;
+  ctx.shadowBlur = 8; ctx.shadowColor = COL.cyan;
+  // 横线(随时间滚动)
+  bgScroll = (bgScroll + 0.5) % 1;
+  for (let i=0;i<14;i++){
+    const t = (i + bgScroll)/14;
+    const y = horizon + (H-horizon) * (t*t);
+    ctx.globalAlpha = 0.18 + t*0.5;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+  // 竖线
+  ctx.globalAlpha = 0.35;
+  for (let i=-10;i<=10;i++){
+    ctx.beginPath();
+    ctx.moveTo(W/2, horizon);
+    ctx.lineTo(W/2 + i*(W*0.16), H);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+}
+
+function drawStar(x,y,r,rot,color){
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(rot);
+  ctx.beginPath();
+  for (let i=0;i<5;i++){
+    const a = (i*4*Math.PI/5) - Math.PI/2;
+    const px = Math.cos(a)*r, py = Math.sin(a)*r;
+    i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
+  }
+  ctx.closePath();
+  ctx.shadowBlur = 16; ctx.shadowColor = color;
+  ctx.fillStyle = color; ctx.fill();
+  ctx.restore();
+}
+
+function drawCube(x,y,s,rot,color){
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(rot);
+  ctx.shadowBlur = 16; ctx.shadowColor = color;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.9;
+  ctx.fillRect(-s/2,-s/2,s,s);
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 2; ctx.strokeStyle = '#10031f';
+  ctx.strokeRect(-s/2,-s/2,s,s);
+  // 内高光
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.fillRect(-s/2+3,-s/2+3,s*0.32,s*0.32);
+  ctx.restore();
+}
+
+function drawBasket(){
+  const y = H - 86;
+  const x = game.basket.x * W;
+  const w = game.basket.w, h = 44;
+  ctx.save();
+  ctx.translate(x, y);
+  // 接篮光晕
+  ctx.shadowBlur = 22; ctx.shadowColor = COL.cyan;
+  ctx.lineWidth = 4;
+  const grad = ctx.createLinearGradient(-w/2,0,w/2,0);
+  grad.addColorStop(0, COL.cyan); grad.addColorStop(0.5, COL.green); grad.addColorStop(1, COL.cyan);
+  ctx.strokeStyle = grad;
+  // U 形篮子
+  ctx.beginPath();
+  ctx.moveTo(-w/2, -h/2);
+  ctx.lineTo(-w/2, h/2);
+  ctx.quadraticCurveTo(-w/2, h/2+10, -w/2+14, h/2+10);
+  ctx.lineTo(w/2-14, h/2+10);
+  ctx.quadraticCurveTo(w/2, h/2+10, w/2, h/2);
+  ctx.lineTo(w/2, -h/2);
+  ctx.stroke();
+  // 接住高光填充
+  if (game.flash > 0){
+    ctx.globalAlpha = game.flash*0.5;
+    ctx.fillStyle = COL.green;
+    ctx.fillRect(-w/2, -h/2, w, h+10);
+    ctx.globalAlpha = 1;
+  }
+  // 篮口霓虹点
+  ctx.shadowBlur = 14; ctx.shadowColor = COL.gold;
+  ctx.fillStyle = COL.gold;
+  ctx.beginPath(); ctx.arc(-w/2, -h/2, 4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc( w/2, -h/2, 4, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawHandMarker(){
+  if (controlMode !== 'hand' || !handVisible || handX === null) return;
+  const x = handX * W;
+  const y = H - 86; // 与接篮同高,标出控制点
+  ctx.save();
+  ctx.shadowBlur = 20; ctx.shadowColor = COL.pink;
+  ctx.strokeStyle = COL.pink; ctx.lineWidth = 3;
+  // 准星
+  ctx.beginPath(); ctx.arc(x, y-150, 16, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y-150, 5, 0, Math.PI*2);
+  ctx.fillStyle = COL.pink; ctx.fill();
+  // 引导竖线
+  ctx.globalAlpha = 0.5; ctx.setLineDash([6,8]);
+  ctx.beginPath(); ctx.moveTo(x, y-130); ctx.lineTo(x, y-30); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawParticles(){
+  for (const p of game.particles){
+    const a = Math.max(0, p.life/p.max);
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  // 屏震
+  if (game.shake > 0){
+    const s = game.shake*10;
+    ctx.translate((Math.random()-0.5)*s, (Math.random()-0.5)*s);
+  }
+  drawBackground();
+
+  if (state === State.PLAY || state === State.OVER){
+    // 落物
+    for (const it of game.items){
+      const x = it.x*W;
+      if (it.star) drawStar(x, it.y, it.size, it.rot, it.color);
+      else drawCube(x, it.y, it.size*1.4, it.rot, it.color);
+    }
+    drawParticles();
+    drawBasket();
+    drawHandMarker();
+  }
+  ctx.restore();
+  ctx.shadowBlur = 0;
+}
+
+/* =========================================================================
+   主循环:rAF + delta time,包 try/catch
+   ========================================================================= */
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now - last)/1000);
+  last = now;
+  try{
+    if (state === State.PLAY){ update(dt); }
+    render();
+  }catch(err){
+    console.error('主循环异常(已捕获,继续):', err);
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* =========================================================================
+   UI 绑定
+   ========================================================================= */
+document.getElementById('btnCam').addEventListener('click', beginWithCamera);
+document.getElementById('btnKey').addEventListener('click', beginWithKeyboard);
+document.getElementById('btnRestart').addEventListener('click', ()=>{ Audio.resume(); startGame(); });
+
+muteBtn.addEventListener('click', ()=>{
+  Audio.resume();
+  const m = !Audio.isMuted();
+  Audio.setMuted(m);
+  muteBtn.textContent = m ? '🔇 MUTED' : '🔊 SOUND';
+  muteBtn.style.borderColor = m ? '#888' : COL.cyan;
+  muteBtn.style.color = m ? '#aaa' : COL.cyan;
+  muteBtn.style.boxShadow = m ? 'none' : '0 0 10px '+COL.cyan;
+});
+
+/* 首次任意手势 resume 音频(浏览器策略) */
+['pointerdown','keydown','touchstart'].forEach(ev=>{
+  window.addEventListener(ev, ()=>Audio.resume(), { once:true });
+});
+
+/* 初始提示 */
+elSrc.textContent = '点击开始选择控制方式';
+</script>
+</body>
+</html>

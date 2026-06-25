@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>NEON FISHING</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 全局合成波 OutRun 风格 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8; --gold:#ffd95e; --green:#5effa0;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0a0420;}
+  body{
+    font-family:'Chakra Petch',system-ui,'Microsoft YaHei',sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    -webkit-tap-highlight-color:transparent;touch-action:none;
+  }
+  #wrap{
+    position:relative;height:100%;aspect-ratio:9/16;max-width:100vw;
+    background:#0a0420;overflow:hidden;
+    box-shadow:0 0 40px rgba(255,46,136,.4);
+  }
+  canvas{display:block;width:100%;height:100%;}
+  /* CRT 扫描线叠加 */
+  #crt{
+    position:absolute;inset:0;pointer-events:none;z-index:30;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.18) 0px,rgba(0,0,0,.18) 1px,transparent 2px,transparent 3px);
+    mix-blend-mode:multiply;
+  }
+  /* HUD */
+  #hud{
+    position:absolute;top:0;left:0;right:0;z-index:20;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:12px 14px;pointer-events:none;
+  }
+  .hudbox{
+    font-family:'Press Start 2P',monospace;font-size:11px;line-height:1.6;
+    color:var(--cyan);text-shadow:0 0 6px var(--cyan);
+    background:rgba(10,4,32,.45);padding:7px 9px;border:2px solid var(--cyan);
+    box-shadow:4px 4px 0 var(--pink);
+  }
+  #hud .right{color:var(--gold);text-shadow:0 0 6px var(--gold);border-color:var(--gold);box-shadow:4px 4px 0 var(--magenta);text-align:right;}
+  /* 静音按钮 */
+  #mute{
+    position:absolute;top:12px;right:14px;z-index:25;cursor:pointer;
+    font-family:'Press Start 2P',monospace;font-size:11px;
+    color:var(--gold);background:rgba(10,4,32,.6);
+    border:2px solid var(--gold);box-shadow:3px 3px 0 var(--magenta);
+    padding:8px 9px;user-select:none;
+  }
+  /* 遮罩 */
+  .overlay{
+    position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:24px;
+    background:radial-gradient(ellipse at 50% 35%,rgba(122,42,110,.5),rgba(10,4,32,.92));
+    backdrop-filter:blur(2px);
+  }
+  .overlay h1{
+    font-family:'Press Start 2P',monospace;font-size:26px;line-height:1.4;
+    color:var(--pink);text-shadow:0 0 12px var(--pink),4px 4px 0 var(--cyan);
+    margin-bottom:6px;letter-spacing:1px;
+  }
+  .overlay h2{
+    font-family:'Press Start 2P',monospace;font-size:15px;color:var(--cyan);
+    text-shadow:0 0 10px var(--cyan),3px 3px 0 var(--magenta);margin-bottom:18px;
+  }
+  .overlay p{font-size:16px;color:#ffeef7;line-height:1.9;margin:4px 0;max-width:320px;}
+  .overlay .key{color:var(--gold);font-weight:700;text-shadow:0 0 6px var(--gold);}
+  .btn{
+    margin-top:22px;cursor:pointer;font-family:'Press Start 2P',monospace;font-size:15px;
+    color:#0a0420;background:var(--green);border:none;
+    padding:16px 28px;box-shadow:5px 5px 0 var(--pink);user-select:none;
+    transition:transform .06s;
+  }
+  .btn:active{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--pink);}
+  .hide{display:none!important;}
+  #finalScore{color:var(--gold);text-shadow:0 0 10px var(--gold);font-weight:700;font-size:22px;}
+  #bestNote{color:var(--magenta);font-size:14px;margin-top:8px;}
+  .small{font-size:12px!important;color:#c8a8e0!important;margin-top:14px!important;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="crt"></div>
+  <div id="hud">
+    <div class="hudbox" id="hudL">SCORE 0<br>FISH 0</div>
+    <div class="hudbox right" id="hudR">TIME 60<br>BEST 0</div>
+  </div>
+  <div id="mute">♪ ON</div>
+
+  <!-- 开始遮罩 -->
+  <div class="overlay" id="startScreen">
+    <h1>NEON</h1>
+    <h2>FISHING</h2>
+    <p>点击 / <span class="key">空格</span> 下钩</p>
+    <p>钩缓慢下沉, <span class="key">← →</span> 微调</p>
+    <p>越深越大的鱼分越高, 限时刷分</p>
+    <button class="btn" id="startBtn">START</button>
+    <p class="small">避开杂物 · 自动收线计分</p>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div class="overlay hide" id="endScreen">
+    <h1>TIME UP</h1>
+    <p>得分 <span id="finalScore">0</span></p>
+    <p id="bestNote">最高分 0</p>
+    <button class="btn" id="againBtn">AGAIN</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =========================================================
+   NEON FISHING — 合成波钓鱼  原生 Canvas 2D
+   ========================================================= */
+
+// ---- DOM ----
+const wrap   = document.getElementById('wrap');
+const canvas = document.getElementById('game');
+const ctx    = canvas.getContext('2d');
+const hudL   = document.getElementById('hudL');
+const hudR   = document.getElementById('hudR');
+const muteBtn= document.getElementById('mute');
+const startScreen = document.getElementById('startScreen');
+const endScreen   = document.getElementById('endScreen');
+const startBtn    = document.getElementById('startBtn');
+const againBtn    = document.getElementById('againBtn');
+const finalScoreEl= document.getElementById('finalScore');
+const bestNoteEl  = document.getElementById('bestNote');
+
+// ---- URL 参数 ----
+const params = new URLSearchParams(location.search);
+const DEMO   = params.has('demo') || params.has('record');
+const RECORD = params.has('record') ? Math.max(1, parseInt(params.get('record'))||15) : 0;
+
+// ---- 颜色 ----
+const C = { pink:'#ff2e88', cyan:'#5ef0ff', magenta:'#ff5ec8', gold:'#ffd95e', green:'#5effa0' };
+
+// ---- 画布尺寸 (逻辑分辨率, 竖屏) ----
+let W = 540, H = 960;   // 逻辑像素
+let DPR = 1;
+function resize(){
+  // 依据 wrap 实际像素 + DPR 设置 canvas 后端尺寸; 仅在真正变化时重设(录制安全)
+  const rect = wrap.getBoundingClientRect();
+  DPR = Math.min(2, window.devicePixelRatio||1);
+  const cw = Math.max(1, Math.round(rect.width  * DPR));
+  const ch = Math.max(1, Math.round(rect.height * DPR));
+  if(canvas.width !== cw || canvas.height !== ch){
+    canvas.width  = cw;
+    canvas.height = ch;
+  }
+  // 逻辑坐标固定 540x960, 通过 setTransform 缩放
+  W = 540; H = 960;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+
+// =========================================================
+//  Web Audio  程序化音效 + 合成波循环
+// =========================================================
+let AC=null, master=null, musicGain=null, sfxGain=null, muted=false;
+let musicTimer=null, musicStep=0;
+function initAudio(){
+  if(AC) return;
+  try{
+    AC = new (window.AudioContext||window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+    musicGain = AC.createGain(); musicGain.gain.value = 0.30; musicGain.connect(master);
+    sfxGain   = AC.createGain(); sfxGain.gain.value   = 0.55; sfxGain.connect(master);
+  }catch(e){ AC=null; }
+}
+function resumeAudio(){ if(AC && AC.state==='suspended'){ AC.resume(); } }
+
+function beep(freq, dur, type, gain, slide){
+  if(!AC||muted) return;
+  try{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type||'square'; o.frequency.value=freq;
+    if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(40,slide), AC.currentTime+dur);
+    g.gain.value=0.0001;
+    g.gain.exponentialRampToValueAtTime(gain||0.4, AC.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime+dur);
+    o.connect(g); g.connect(sfxGain); o.start(); o.stop(AC.currentTime+dur+0.02);
+  }catch(e){}
+}
+function sfxCast(){ beep(220,0.18,'sawtooth',0.35,90); }          // 下钩
+function sfxHook(){ beep(660,0.10,'square',0.45,990); setTimeout(()=>beep(990,0.12,'square',0.4,1320),60); } // 钩中
+function sfxScore(s){ beep(520+Math.min(600,s),0.14,'triangle',0.5,1200); } // 得分
+function sfxJunk(){ beep(140,0.22,'sawtooth',0.4,70); }           // 杂物
+function sfxClick(){ beep(880,0.06,'square',0.3,660); }
+
+// 合成波循环配乐: 简单琶音 bass + lead
+const bassSeq = [55,55,82.4,73.4];           // A1 A1 E2 D2
+const leadSeq = [220,277,330,277,247,330,440,330];
+function musicTick(){
+  if(!AC||muted) return;
+  const t = AC.currentTime;
+  // bass
+  const b = bassSeq[Math.floor(musicStep/2)%bassSeq.length];
+  try{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type='triangle'; o.frequency.value=b;
+    g.gain.value=0.0001; g.gain.linearRampToValueAtTime(0.5,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.34);
+    o.connect(g); g.connect(musicGain); o.start(t); o.stop(t+0.36);
+  }catch(e){}
+  // lead pluck
+  const l = leadSeq[musicStep%leadSeq.length];
+  try{
+    const o=AC.createOscillator(), g=AC.createGain(), f=AC.createBiquadFilter();
+    f.type='lowpass'; f.frequency.value=1400;
+    o.type='sawtooth'; o.frequency.value=l;
+    g.gain.value=0.0001; g.gain.linearRampToValueAtTime(0.22,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+    o.connect(f); f.connect(g); g.connect(musicGain); o.start(t); o.stop(t+0.24);
+  }catch(e){}
+  musicStep++;
+}
+function startMusic(){
+  if(musicTimer) return;
+  musicTimer = setInterval(musicTick, 200); // 150bpm 八分音
+}
+function stopMusic(){ if(musicTimer){ clearInterval(musicTimer); musicTimer=null; } }
+
+muteBtn.addEventListener('click', (e)=>{
+  e.stopPropagation();
+  muted = !muted;
+  muteBtn.textContent = muted ? '♪ OFF' : '♪ ON';
+  muteBtn.style.opacity = muted ? 0.5 : 1;
+  if(master) master.gain.value = muted ? 0 : 0.9;
+});
+
+// =========================================================
+//  游戏状态
+// =========================================================
+const STATE = { START:0, PLAY:1, END:2 };
+let state = STATE.START;
+
+let score=0, fishCaught=0, timeLeft=60, best=0;
+try{ best = parseInt(localStorage.getItem('neonFishingBest'))||0; }catch(e){ best=0; }
+
+const WATER_Y = 230;        // 水面 y
+let fishes=[], junks=[], particles=[], bubbles=[], beams=[], floaters=[];
+let rod;                    // 鱼钩/线
+let spawnTimer=0, difficulty=1, elapsed=0;
+let shakeT=0, shakeMag=0;
+
+// 输入
+const keys={};
+let aimDir=0;  // ←→ 微调
+
+// ---- 鱼类型(越深越大分越高) ----
+function makeFish(){
+  // 决定深度带: 0 浅 1 中 2 深
+  const r = Math.random();
+  let band;
+  if(r<0.5) band=0; else if(r<0.82) band=1; else band=2;
+  let depthMin, depthMax, size, value, col, speed;
+  if(band===0){ depthMin=WATER_Y+40; depthMax=WATER_Y+200; size=16+Math.random()*8; value=10; col=C.cyan;  speed=70+Math.random()*40; }
+  else if(band===1){ depthMin=WATER_Y+220; depthMax=WATER_Y+440; size=24+Math.random()*10; value=30; col=C.green; speed=55+Math.random()*35; }
+  else { depthMin=WATER_Y+460; depthMax=H-70; size=34+Math.random()*16; value=70; col=C.magenta; speed=42+Math.random()*30; }
+  value = Math.round(value * (1 + (difficulty-1)*0.15));
+  const dir = Math.random()<0.5?-1:1;
+  const fromLeft = dir>0;
+  return {
+    x: fromLeft ? -40 : W+40,
+    y: depthMin + Math.random()*(depthMax-depthMin),
+    baseY: 0, // set below
+    size, value, col, dir,
+    speed,
+    bob: Math.random()*Math.PI*2,
+    bobAmp: 8+Math.random()*14,
+    wig: Math.random()*Math.PI*2,
+    hooked:false, dead:false
+  };
+}
+function spawnFish(){
+  const f = makeFish(); f.baseY=f.y; fishes.push(f);
+}
+function spawnJunk(){
+  const dir = Math.random()<0.5?-1:1;
+  const fromLeft = dir>0;
+  junks.push({
+    x: fromLeft?-40:W+40,
+    y: WATER_Y+60 + Math.random()*(H-WATER_Y-140),
+    dir, speed:30+Math.random()*30,
+    size:18+Math.random()*10,
+    rot:Math.random()*Math.PI, rotS:(Math.random()-0.5)*1.5,
+    type: Math.floor(Math.random()*3), dead:false
+  });
+}
+
+// ---- 鱼钩 ----
+function resetRod(){
+  rod = {
+    x: W/2, y: WATER_Y-6,
+    state:'idle',          // idle / sinking / reeling
+    sinkSpeed:120,
+    reelSpeed:340,
+    caught:null,           // 钩住的鱼
+    swing:0
+  };
+}
+
+// =========================================================
+//  开始 / 结束
+// =========================================================
+function startGame(){
+  score=0; fishCaught=0; timeLeft=60; difficulty=1; elapsed=0;
+  fishes=[]; junks=[]; particles=[]; bubbles=[]; floaters=[];
+  spawnTimer=0;
+  resetRod();
+  // 预铺一些鱼
+  for(let i=0;i<7;i++) spawnFish();
+  for(let i=0;i<2;i++) spawnJunk();
+  for(let i=0;i<40;i++){
+    bubbles.push({x:Math.random()*W, y:WATER_Y+Math.random()*(H-WATER_Y), r:1+Math.random()*3, sp:10+Math.random()*30});
+  }
+  state = STATE.PLAY;
+  startScreen.classList.add('hide');
+  endScreen.classList.add('hide');
+  initAudio(); resumeAudio(); startMusic();
+}
+function endGame(){
+  state = STATE.END;
+  if(score>best){ best=score; try{localStorage.setItem('neonFishingBest',best);}catch(e){} }
+  finalScoreEl.textContent = score;
+  bestNoteEl.textContent = '最高分 '+best + (score>=best&&score>0?'  NEW!':'');
+  endScreen.classList.remove('hide');
+  stopMusic();
+  // demo 模式自动重开, 保证整段有内容
+  if(DEMO){
+    setTimeout(()=>{ if(state===STATE.END) startGame(); }, 2200);
+  }
+}
+
+// =========================================================
+//  动作: 下钩
+// =========================================================
+function castRod(){
+  if(state!==STATE.PLAY) return;
+  if(rod.state==='idle'){
+    rod.state='sinking';
+    rod.y = WATER_Y-6;
+    sfxCast();
+    floaters.push(mkText(rod.x, WATER_Y-20, 'SPLASH', C.cyan));
+    // 水花泡泡
+    for(let i=0;i<10;i++){
+      particles.push({x:rod.x,y:WATER_Y,vx:(Math.random()-0.5)*140,vy:-Math.random()*120,life:0.5,r:2+Math.random()*3,col:C.cyan});
+    }
+  }
+}
+
+function mkText(x,y,txt,col){ return {x,y,txt,col,life:1,vy:-40}; }
+
+// =========================================================
+//  更新
+// =========================================================
+function addShake(m){ shakeMag=Math.max(shakeMag,m); shakeT=Math.max(shakeT,0.3); }
+
+function update(dt){
+  if(state!==STATE.PLAY) return;
+
+  elapsed += dt;
+  timeLeft -= dt;
+  if(timeLeft<=0){ timeLeft=0; endGame(); return; }
+
+  // 难度递增
+  difficulty = 1 + elapsed/22;
+
+  // ---- 光束飘动相位 ----
+
+  // ---- AI 演示 ----
+  if(DEMO) aiPlay(dt);
+
+  // ---- 鱼钩横向微调 ----
+  let move=0;
+  if(keys['ArrowLeft']) move-=1;
+  if(keys['ArrowRight']) move+=1;
+  move += aimDir;
+  rod.x += move*180*dt;
+  rod.x = Math.max(24, Math.min(W-24, rod.x));
+
+  // ---- 鱼钩状态机 ----
+  if(rod.state==='sinking'){
+    rod.y += rod.sinkSpeed*dt;
+    rod.swing = Math.sin(elapsed*4)*4;
+    if(rod.y >= H-30){
+      // 触底, 自动收线
+      rod.state='reeling';
+    }
+    // 碰撞检测鱼
+    for(const f of fishes){
+      if(f.hooked||f.dead) continue;
+      const dx=f.x-rod.x, dy=f.y-rod.y;
+      if(Math.hypot(dx,dy) < f.size+10){
+        f.hooked=true; rod.caught=f; rod.state='reeling';
+        sfxHook(); addShake(6);
+        for(let i=0;i<12;i++){
+          particles.push({x:rod.x,y:rod.y,vx:(Math.random()-0.5)*180,vy:(Math.random()-0.5)*180,life:0.5,r:2+Math.random()*3,col:f.col});
+        }
+        break;
+      }
+    }
+    // 碰撞杂物(钩到杂物: 收线但不得分, 略扣时间感)
+    for(const j of junks){
+      if(j.dead) continue;
+      const dx=j.x-rod.x, dy=j.y-rod.y;
+      if(Math.hypot(dx,dy) < j.size+10 && !rod.caught){
+        rod.caught={junk:true, ...j}; rod.caughtJunk=j; j.dead=true;
+        rod.state='reeling'; sfxJunk(); addShake(4);
+        break;
+      }
+    }
+  }
+  else if(rod.state==='reeling'){
+    rod.y -= rod.reelSpeed*dt;
+    if(rod.caught){
+      // 鱼/杂物跟随鱼钩
+      rod.caught.x = rod.x;
+      rod.caught.y = rod.y+6;
+    }
+    if(rod.y <= WATER_Y-6){
+      rod.y = WATER_Y-6;
+      // 收线完成结算
+      if(rod.caught && !rod.caught.junk){
+        const f=rod.caught;
+        score += f.value; fishCaught++;
+        sfxScore(f.value);
+        floaters.push(mkText(rod.x, WATER_Y-30, '+'+f.value, f.col));
+        for(let i=0;i<16;i++){
+          particles.push({x:rod.x,y:WATER_Y,vx:(Math.random()-0.5)*220,vy:-Math.random()*200,life:0.6,r:2+Math.random()*3,col:f.col});
+        }
+        f.dead=true; addShake(5);
+      } else if(rod.caught && rod.caught.junk){
+        floaters.push(mkText(rod.x, WATER_Y-30, 'JUNK', C.pink));
+      }
+      rod.caught=null; rod.caughtJunk=null; rod.state='idle';
+    }
+  }
+
+  // ---- 移动鱼 ----
+  for(const f of fishes){
+    if(f.dead) continue;
+    if(!f.hooked){
+      f.x += f.dir*f.speed*dt;
+      f.bob += dt*1.6;
+      f.wig += dt*8;
+      f.y = f.baseY + Math.sin(f.bob)*f.bobAmp;
+      // 出界回收
+      if((f.dir>0 && f.x>W+60)||(f.dir<0 && f.x<-60)) f.dead=true;
+    }
+  }
+  fishes = fishes.filter(f=>!f.dead);
+
+  // ---- 移动杂物 ----
+  for(const j of junks){
+    if(j.dead) continue;
+    j.x += j.dir*j.speed*dt;
+    j.rot += j.rotS*dt;
+    if((j.dir>0 && j.x>W+60)||(j.dir<0 && j.x<-60)) j.dead=true;
+  }
+  junks = junks.filter(j=>!j.dead);
+
+  // ---- 生成 ----
+  spawnTimer -= dt;
+  if(spawnTimer<=0){
+    spawnFish();
+    if(Math.random()<0.4) spawnJunk();
+    spawnTimer = Math.max(0.5, 1.4 - difficulty*0.12);
+  }
+  // 维持鱼数量
+  if(fishes.length<6) spawnFish();
+
+  // ---- 泡泡 ----
+  for(const b of bubbles){
+    b.y -= b.sp*dt;
+    if(b.y < WATER_Y){ b.y=H; b.x=Math.random()*W; }
+  }
+
+  // ---- 粒子 ----
+  for(const p of particles){
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=380*dt; p.life-=dt;
+  }
+  particles = particles.filter(p=>p.life>0);
+
+  // ---- 飘字 ----
+  for(const t of floaters){ t.y+=t.vy*dt; t.life-=dt*1.3; }
+  floaters = floaters.filter(t=>t.life>0);
+
+  // ---- 抖动衰减 ----
+  if(shakeT>0){ shakeT-=dt; if(shakeT<0)shakeT=0; }
+
+  // HUD
+  hudL.innerHTML = 'SCORE '+score+'<br>FISH '+fishCaught;
+  hudR.innerHTML = 'TIME '+Math.ceil(timeLeft)+'<br>BEST '+best;
+}
+
+// =========================================================
+//  AI 自动演示: 瞄准较近/高分鱼, 下钩并收线
+// =========================================================
+let aiTargetX=null, aiCastCool=0;
+function aiPlay(dt){
+  aiCastCool -= dt;
+  if(rod.state==='idle'){
+    // 选目标: 评分 = value / (1 + 距离/参考)  偏好高分且较近
+    let best=null, bestScore=-1;
+    for(const f of fishes){
+      if(f.hooked||f.dead) continue;
+      const horiz = Math.abs(f.x - rod.x);
+      const depth = f.y - WATER_Y;
+      // 偏好: 价值高、水平近、且会经过中线附近
+      const s = f.value*3 - horiz*0.15 - Math.abs(f.x-W/2)*0.05;
+      if(s>bestScore){ bestScore=s; best=f; }
+    }
+    if(best){
+      // 预测: 朝鱼当前位置 + 一点提前量
+      aiTargetX = best.x + best.dir*best.speed*0.25;
+      aiTargetX = Math.max(30, Math.min(W-30, aiTargetX));
+    }
+    // 移动到目标
+    if(aiTargetX!=null){
+      const d = aiTargetX - rod.x;
+      aimDir = Math.abs(d)>6 ? Math.sign(d)*1 : 0;
+      // 对齐后且有冷却就下钩
+      if(Math.abs(d)<28 && aiCastCool<=0){
+        castRod();
+        aiCastCool = 0.4;
+      }
+    }
+  } else if(rod.state==='sinking'){
+    // 下沉时朝最近可达的鱼微调
+    let target=null, bd=1e9;
+    for(const f of fishes){
+      if(f.hooked||f.dead) continue;
+      if(f.y < rod.y-30) continue; // 只追比钩深一点的
+      const d = Math.hypot(f.x-rod.x, (f.y-rod.y)*0.6);
+      // 价值加权
+      const score = d - f.value*1.2;
+      if(score<bd){ bd=score; target=f; }
+    }
+    if(target){
+      const d = target.x - rod.x;
+      aimDir = Math.abs(d)>5 ? Math.sign(d)*1 : 0;
+    } else aimDir=0;
+  } else {
+    aimDir=0;
+  }
+}
+
+// =========================================================
+//  绘制
+// =========================================================
+function drawBackground(){
+  // 日落渐变(画在水面之上的天空)
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0.00,'#160a36');
+  g.addColorStop(0.30,'#3a1457');
+  g.addColorStop(0.50,'#7a2a6e');
+  g.addColorStop(0.64,'#ff5e7e');
+  g.addColorStop(0.72,'#ff9a4d');
+  // 水面以下变深(覆盖)
+  g.addColorStop(0.721,'#160a36');
+  g.addColorStop(1.00,'#05010f');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // 太阳
+  const sunY = WATER_Y-86;
+  ctx.save();
+  const sg=ctx.createLinearGradient(0,sunY-70,0,sunY+70);
+  sg.addColorStop(0,'#ffe66e'); sg.addColorStop(1,'#ff2e88');
+  ctx.fillStyle=sg;
+  ctx.beginPath(); ctx.arc(W/2,sunY,70,0,Math.PI*2); ctx.fill();
+  // 太阳横纹
+  ctx.fillStyle='#160a36';
+  for(let i=0;i<6;i++){
+    const yy=sunY+8+i*9;
+    ctx.fillRect(W/2-72, yy, 144, 3+i*0.8);
+  }
+  ctx.restore();
+
+  // 远山霓虹网格(地平线上)
+  ctx.save();
+  ctx.strokeStyle='rgba(255,46,136,0.25)'; ctx.lineWidth=1;
+  for(let i=1;i<8;i++){
+    const xx=(W/8)*i;
+    ctx.beginPath(); ctx.moveTo(xx,WATER_Y-30); ctx.lineTo(W/2,WATER_Y-100); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawWater(t){
+  // 水面波纹高光
+  ctx.save();
+  ctx.strokeStyle='rgba(94,240,255,0.5)'; ctx.lineWidth=3;
+  ctx.beginPath();
+  for(let x=0;x<=W;x+=8){
+    const y=WATER_Y + Math.sin(x*0.05 + t*2)*4 + Math.sin(x*0.13 - t*3)*2;
+    if(x===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  // 第二条波
+  ctx.strokeStyle='rgba(255,94,200,0.3)'; ctx.lineWidth=2;
+  ctx.beginPath();
+  for(let x=0;x<=W;x+=8){
+    const y=WATER_Y+6 + Math.sin(x*0.07 - t*2.4)*3;
+    if(x===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // 水下光束
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<4;i++){
+    const bx = (W/5)*(i+1) + Math.sin(t*0.5+i)*20;
+    const grad=ctx.createLinearGradient(bx,WATER_Y,bx-60,H);
+    grad.addColorStop(0,'rgba(94,240,255,0.12)');
+    grad.addColorStop(1,'rgba(94,240,255,0)');
+    ctx.fillStyle=grad;
+    ctx.beginPath();
+    ctx.moveTo(bx-14,WATER_Y); ctx.lineTo(bx+14,WATER_Y);
+    ctx.lineTo(bx+50,H); ctx.lineTo(bx-90,H);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+
+  // 泡泡
+  ctx.save();
+  ctx.fillStyle='rgba(94,240,255,0.35)';
+  for(const b of bubbles){
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+
+  // 深度提示线
+  ctx.save();
+  ctx.strokeStyle='rgba(255,217,94,0.06)'; ctx.lineWidth=1;
+  ctx.setLineDash([6,10]);
+  [WATER_Y+220, WATER_Y+460].forEach(y=>{
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  });
+  ctx.restore();
+}
+
+function drawFish(f){
+  ctx.save();
+  ctx.translate(f.x,f.y);
+  ctx.scale(f.dir,1);
+  const wig = Math.sin(f.wig)*0.25;
+  // 发光
+  ctx.shadowColor=f.col; ctx.shadowBlur=16;
+  // 身体
+  ctx.fillStyle=f.col;
+  ctx.beginPath();
+  ctx.ellipse(0,0,f.size,f.size*0.55,0,0,Math.PI*2);
+  ctx.fill();
+  // 尾巴
+  ctx.beginPath();
+  ctx.moveTo(-f.size*0.8,0);
+  ctx.lineTo(-f.size*1.5, -f.size*0.5 + wig*f.size);
+  ctx.lineTo(-f.size*1.5,  f.size*0.5 + wig*f.size);
+  ctx.closePath(); ctx.fill();
+  // 内描边(深色)
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(10,4,32,0.55)';
+  ctx.beginPath();
+  ctx.ellipse(f.size*0.2,0,f.size*0.55,f.size*0.32,0,0,Math.PI*2);
+  ctx.fill();
+  // 眼睛
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(f.size*0.55,-f.size*0.12,f.size*0.13,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#0a0420';
+  ctx.beginPath(); ctx.arc(f.size*0.58,-f.size*0.12,f.size*0.06,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawJunk(j){
+  ctx.save();
+  ctx.translate(j.x,j.y); ctx.rotate(j.rot);
+  ctx.shadowColor=C.pink; ctx.shadowBlur=8;
+  ctx.strokeStyle='rgba(255,46,136,0.8)'; ctx.lineWidth=3;
+  ctx.fillStyle='rgba(40,20,60,0.7)';
+  if(j.type===0){ // 旧靴子 -> 方块罐
+    ctx.fillRect(-j.size*0.6,-j.size*0.6,j.size*1.2,j.size*1.2);
+    ctx.strokeRect(-j.size*0.6,-j.size*0.6,j.size*1.2,j.size*1.2);
+  } else if(j.type===1){ // 海星状
+    ctx.beginPath();
+    for(let i=0;i<5;i++){
+      const a=i/5*Math.PI*2, r=j.size;
+      const a2=a+Math.PI/5, r2=j.size*0.45;
+      if(i===0)ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r); else ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);
+      ctx.lineTo(Math.cos(a2)*r2,Math.sin(a2)*r2);
+    }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else { // 瓶子(三角)
+    ctx.beginPath();
+    ctx.moveTo(0,-j.size); ctx.lineTo(j.size*0.8,j.size*0.7); ctx.lineTo(-j.size*0.8,j.size*0.7);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawRod(t){
+  // 钓竿基座(船 / 浮标)
+  ctx.save();
+  ctx.shadowColor=C.gold; ctx.shadowBlur=10;
+  ctx.fillStyle=C.gold;
+  ctx.fillRect(rod.x-3, WATER_Y-16, 6, 12);
+  // 钓线
+  ctx.shadowBlur=0;
+  ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=1.5;
+  ctx.beginPath();
+  ctx.moveTo(rod.x, WATER_Y-6);
+  // 轻微曲线
+  const midY=(WATER_Y-6 + rod.y)/2;
+  ctx.quadraticCurveTo(rod.x+rod.swing, midY, rod.x, rod.y);
+  ctx.stroke();
+  // 鱼钩
+  ctx.strokeStyle=C.gold; ctx.lineWidth=2.5;
+  ctx.shadowColor=C.gold; ctx.shadowBlur=10;
+  ctx.beginPath();
+  ctx.arc(rod.x, rod.y, 6, Math.PI*0.1, Math.PI*1.5);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(rod.x-2, rod.y-2, 1.6, 0, Math.PI*2);
+  ctx.fillStyle=C.gold; ctx.fill();
+  ctx.restore();
+}
+
+function drawParticles(){
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.col;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawFloaters(){
+  ctx.save();
+  ctx.font="14px 'Press Start 2P',monospace";
+  ctx.textAlign='center';
+  for(const t of floaters){
+    ctx.globalAlpha=Math.max(0,t.life);
+    ctx.fillStyle=t.col;
+    ctx.shadowColor=t.col; ctx.shadowBlur=10;
+    ctx.fillText(t.txt, t.x, t.y);
+  }
+  ctx.restore();
+}
+
+function draw(){
+  const t = elapsed;
+  // 缩放到逻辑坐标 + 抖动
+  let sx=0, sy=0;
+  if(shakeT>0){ sx=(Math.random()-0.5)*shakeMag; sy=(Math.random()-0.5)*shakeMag; }
+  ctx.setTransform(canvas.width/W,0,0,canvas.height/H, sx, sy);
+  ctx.clearRect(-10,-10,W+20,H+20);
+
+  drawBackground();
+  drawWater(t);
+
+  // 鱼(按深度排序, 深的先画)
+  const sorted = fishes.slice().sort((a,b)=>a.y-b.y);
+  for(const f of sorted) drawFish(f);
+  for(const j of junks) drawJunk(j);
+
+  if(state===STATE.PLAY || state===STATE.END) drawRod(t);
+
+  drawParticles();
+  drawFloaters();
+
+  ctx.setTransform(1,0,0,1,0,0);
+}
+
+// =========================================================
+//  主循环  requestAnimationFrame + delta time
+// =========================================================
+let lastT=performance.now();
+function loop(now){
+  let dt=(now-lastT)/1000; lastT=now;
+  if(dt>0.05) dt=0.05;       // 防卡顿跳变
+  try{ update(dt); }catch(e){ /* 防一帧异常打断 */ console.warn('update',e); }
+  try{ draw(); }catch(e){ console.warn('draw',e); }
+  requestAnimationFrame(loop);
+}
+
+// =========================================================
+//  输入绑定
+// =========================================================
+window.addEventListener('keydown',(e)=>{
+  if(e.code==='ArrowLeft'||e.code==='ArrowRight'){ keys[e.code]=true; e.preventDefault(); }
+  if(e.code==='Space'){
+    e.preventDefault();
+    if(state===STATE.START){ startGame(); }
+    else if(state===STATE.END){ if(!DEMO) startGame(); }
+    else castRod();
+  }
+});
+window.addEventListener('keyup',(e)=>{
+  if(e.code==='ArrowLeft'||e.code==='ArrowRight') keys[e.code]=false;
+});
+
+// 点击 / 触屏: 开始 / 下钩 / 重开(闭环)
+function pointerCast(e){
+  if(e.target===muteBtn) return;
+  // 触屏首次交互需在用户手势内创建/恢复音频
+  initAudio(); resumeAudio();
+  if(state===STATE.START){ startGame(); }
+  else if(state===STATE.PLAY){ castRod(); }
+  else if(state===STATE.END){ if(!DEMO) startGame(); }
+}
+canvas.addEventListener('pointerdown', pointerCast);
+
+startBtn.addEventListener('click',(e)=>{ e.stopPropagation(); sfxClick(); initAudio(); resumeAudio(); startGame(); });
+againBtn.addEventListener('click',(e)=>{ e.stopPropagation(); sfxClick(); startGame(); });
+
+// =========================================================
+//  录制 (?record=N)
+// =========================================================
+function startRecording(seconds){
+  try{
+    const cv=canvas;
+    const stream=cv.captureStream(30);
+    if(!stream || stream.getVideoTracks().length===0){ console.warn('无视频轨'); return; }
+    let mt='video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[];
+    mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{
+      const b=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(b); a.download='neon-fishing.webm';
+      document.body.appendChild(a); try{a.click()}catch(e){}
+    };
+    mr.start(250);
+    setTimeout(()=>{ try{mr.stop()}catch(e){} }, seconds*1000);
+  }catch(e){ console.warn('record fail',e); }
+}
+
+// =========================================================
+//  启动
+// =========================================================
+resize();
+requestAnimationFrame(loop);
+
+if(DEMO){
+  // 免手势: 直接开局(音频可能受策略限制, 但画面/AI正常)
+  initAudio();
+  // 某些浏览器允许 resume; 失败也不影响演示
+  setTimeout(()=>{ resumeAudio(); }, 100);
+  startGame();
+  if(RECORD){
+    // 确保画面已有内容再录, 录制期间 resize 不会清画布
+    setTimeout(()=>{ startRecording(RECORD); }, 400);
+  }
+}
+})();
+</script>
+</body>
+</html>

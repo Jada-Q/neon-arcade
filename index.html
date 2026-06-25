@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NEON ARCADE · 霓虹街机合集</title>
+<meta name="description" content="34 款合成波霓虹风格的纯前端浏览器游戏，点开即玩。" />
+<link rel="manifest" href="manifest.json" />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{ --bg:#0b0d14; --card:#141823; --stroke:#232838; --ink:#e8edf7; --dim:#8a93a6;
+         --cyan:#34e2ff; --pink:#ff4f8b; --green:#5effa0; --gold:#ffd95e; --purple:#a978ff; }
+  *{margin:0;box-sizing:border-box;}
+  body{ background:radial-gradient(ellipse at 50% -10%, #1a2240, var(--bg) 60%); color:var(--ink);
+        font-family:'Inter',system-ui,sans-serif; min-height:100vh; padding:48px 20px 90px; }
+  .wrap{ max-width:1180px; margin:0 auto; }
+  header h1{ font-family:'Chakra Petch',sans-serif; font-size:clamp(30px,6vw,46px); letter-spacing:2px;
+            background:linear-gradient(90deg,var(--cyan),var(--pink),var(--purple)); -webkit-background-clip:text;
+            background-clip:text; color:transparent; }
+  .sub{ color:var(--dim); font-size:15px; margin:8px 0 26px; }
+  .sub b{ color:var(--cyan); }
+
+  .tabs{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:28px; }
+  .tab{ font-family:'Chakra Petch',sans-serif; font-size:13px; letter-spacing:.5px; cursor:pointer;
+        color:var(--dim); background:#161b29; border:1px solid var(--stroke); padding:9px 16px; border-radius:24px;
+        transition:.18s; }
+  .tab:hover{ color:var(--ink); border-color:var(--cyan); }
+  .tab.active{ color:#04121f; background:linear-gradient(90deg,var(--cyan),#4f9dff); border-color:transparent; font-weight:700; }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(248px,1fr)); gap:18px; }
+  .card{ background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:20px 20px 18px;
+         display:flex; flex-direction:column; gap:6px; transition:transform .14s, border-color .2s; position:relative; overflow:hidden; }
+  .card::before{ content:""; position:absolute; inset:0 0 auto 0; height:3px;
+                 background:linear-gradient(90deg,var(--cyan),var(--pink)); opacity:.0; transition:.2s; }
+  .card:hover{ transform:translateY(-4px); border-color:var(--cyan); }
+  .card:hover::before{ opacity:1; }
+  .card h2{ font-family:'Chakra Petch',sans-serif; font-size:18px; letter-spacing:.5px; }
+  .card .en{ color:var(--dim); font-size:12px; font-weight:500; letter-spacing:1px; text-transform:uppercase; }
+  .card .badge{ position:absolute; top:14px; right:14px; font-size:11px; font-weight:700; padding:4px 9px;
+        border-radius:14px; background:rgba(169,120,255,.16); color:var(--purple); border:1px solid rgba(169,120,255,.34); }
+  .links{ display:flex; gap:9px; margin-top:12px; }
+  a.btn{ flex:1; text-align:center; text-decoration:none; font-weight:700; font-size:13px; letter-spacing:.5px;
+         color:#04121f; background:linear-gradient(90deg,var(--cyan),#4f9dff); padding:10px 12px; border-radius:10px;
+         transition:filter .15s; }
+  a.btn:hover{ filter:brightness(1.1); }
+  a.btn.ghost{ flex:0 0 auto; color:var(--ink); background:#1b2234; border:1px solid var(--stroke); }
+  a.btn.ghost:hover{ border-color:var(--pink); filter:none; }
+
+  footer{ margin-top:46px; color:var(--dim); font-size:13px; line-height:1.8; border-top:1px solid var(--stroke); padding-top:22px; }
+  footer a{ color:var(--cyan); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>NEON ARCADE</h1></header>
+  <div class="sub">霓虹合成波风格浏览器游戏合集 · 共 <b>34 款</b> · 点开即玩，无需安装</div>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="grid" id="grid"></div>
+
+  <footer>
+    📷🎤 标记的游戏需要摄像头或麦克风权限。<br>
+    源码 / 离线安装：<a href="https://github.com/Jada-Q/neon-arcade" target="_blank">github.com/Jada-Q/neon-arcade</a> · 全部纯客户端运行，不收集任何数据。
+  </footer>
+</div>
+
+<script>
+  const CATS = { classic:"经典复刻", action:"动作 / 3D", rhythm:"音乐节奏", sensor:"体感交互" };
+  const GAMES = [
+    {f:"dodge-game.html",  zh:"3D 赛车竞速", en:"Neon Racer", cat:"action", t:"neon-racer-trailer.mp4"},
+    {f:"neon-runner.html", zh:"霓虹跑酷",   en:"Neon Runner", cat:"action", t:"neon-runner-trailer.mp4"},
+    {f:"neon-platform.html",zh:"平台跳跃",  en:"Neon Platform", cat:"action", t:"neon-platform-trailer.mp4"},
+    {f:"neon-jump.html",   zh:"霓虹攀登",   en:"Neon Jump", cat:"action", t:"neon-jump-trailer.mp4"},
+    {f:"neon-fpsmaze.html",zh:"第一人称迷宫",en:"FPS Maze", cat:"action", t:"neon-fpsmaze-trailer.mp4"},
+    {f:"neon-maze.html",   zh:"霓虹迷宫",   en:"Neon Maze", cat:"action", t:"neon-maze-trailer.mp4"},
+    {f:"neon-tunnel.html", zh:"隧道穿梭",   en:"Neon Tunnel", cat:"action", t:"neon-tunnel-trailer.mp4"},
+    {f:"neon-voxel.html",  zh:"体素世界",   en:"Voxel Craft", cat:"action", t:"neon-voxel-trailer.mp4"},
+    {f:"neon-shooter.html",zh:"生存射击",   en:"Neon Survivor", cat:"action", t:"neon-shooter-trailer.mp4"},
+    {f:"neon-bullet.html", zh:"霓虹弹幕",   en:"Neon Bullet", cat:"action", t:"neon-bullet-trailer.mp4"},
+    {f:"neon-defense.html",zh:"路径塔防",   en:"Neon Defense", cat:"action", t:"neon-defense-trailer.mp4"},
+    {f:"neon-fruit.html",  zh:"切水果",     en:"Fruit Ninja", cat:"action", t:"neon-fruit-trailer.mp4"},
+    {f:"neon-fishing.html",zh:"霓虹钓鱼",   en:"Neon Fishing", cat:"action", t:"neon-fishing-trailer.mp4"},
+    {f:"neon-golf.html",   zh:"迷你高尔夫", en:"Neon Golf", cat:"action", t:"neon-golf-trailer.mp4"},
+
+    {f:"neon-2048.html",   zh:"霓虹 2048",  en:"Neon 2048", cat:"classic", t:"neon-2048-trailer.mp4"},
+    {f:"neon-blocks.html", zh:"俄罗斯方块", en:"Neon Blocks", cat:"classic", t:"neon-blocks-trailer.mp4"},
+    {f:"neon-brick.html",  zh:"打砖块",     en:"Neon Brick", cat:"classic", t:"neon-brick-trailer.mp4"},
+    {f:"neon-snake.html",  zh:"贪吃蛇",     en:"Neon Snake", cat:"classic", t:"neon-snake-trailer.mp4"},
+    {f:"neon-tron.html",   zh:"光轨对战",   en:"Neon Tron", cat:"classic", t:"neon-tron-trailer.mp4"},
+    {f:"neon-invaders.html",zh:"太空侵略者",en:"Neon Invaders", cat:"classic", t:"neon-invaders-trailer.mp4"},
+    {f:"neon-flappy.html", zh:"霓虹 Flappy",en:"Neon Flappy", cat:"classic", t:"neon-flappy-trailer.mp4"},
+    {f:"neon-pinball.html",zh:"霓虹弹球",   en:"Neon Pinball", cat:"classic", t:"neon-pinball-trailer.mp4"},
+    {f:"neon-matter.html", zh:"弹珠机",     en:"Neon Pachinko", cat:"classic", t:"neon-matter-trailer.mp4"},
+    {f:"neon-mine.html",   zh:"霓虹扫雷",   en:"Neon Mine", cat:"classic", t:"neon-mine-trailer.mp4"},
+    {f:"neon-sokoban.html",zh:"推箱子",     en:"Neon Sokoban", cat:"classic", t:"neon-sokoban-trailer.mp4"},
+    {f:"neon-suika.html",  zh:"合成大西瓜", en:"Neon Suika", cat:"classic", t:"neon-suika-trailer.mp4"},
+    {f:"neon-match3.html", zh:"霓虹三消",   en:"Neon Match-3", cat:"classic", t:"neon-match3-trailer.mp4"},
+    {f:"neon-cards.html",  zh:"翻牌记忆",   en:"Neon Cards", cat:"classic", t:"neon-cards-trailer.mp4"},
+    {f:"neon-whack.html",  zh:"打地鼠",     en:"Neon Whack", cat:"classic", t:"neon-whack-trailer.mp4"},
+
+    {f:"neon-rhythm.html", zh:"下落式音游", en:"Neon Rhythm", cat:"rhythm", t:"neon-rhythm-trailer.mp4"},
+    {f:"neon-dance.html",  zh:"方向键跳舞", en:"Neon Dance", cat:"rhythm", t:"neon-dance-trailer.mp4"},
+
+    {f:"neon-face.html",   zh:"头控吃豆",   en:"Face Control", cat:"sensor", sensor:"📷"},
+    {f:"neon-hand.html",   zh:"手势接物",   en:"Hand Catch", cat:"sensor", sensor:"📷"},
+    {f:"neon-voice.html",  zh:"喊话飞行",   en:"Voice Runner", cat:"sensor", sensor:"🎤"},
+  ];
+
+  // 预告片作为 GitHub Release 附件分发（仓库本体保持精简）
+  const TRAILER_BASE = "https://github.com/Jada-Q/neon-arcade/releases/download/v1.0/";
+
+  const grid = document.getElementById('grid');
+  const tabs = document.getElementById('tabs');
+  let filter = "all";
+
+  function render(){
+    grid.innerHTML = "";
+    GAMES.filter(g => filter==="all" || g.cat===filter).forEach(g => {
+      const card = document.createElement('div');
+      card.className = "card";
+      const trailer = g.t ? `<a class="btn ghost" href="${TRAILER_BASE}${encodeURIComponent(g.t)}" target="_blank" rel="noopener" title="预告片（Release 下载）">🎬</a>` : "";
+      const badge = g.sensor ? `<span class="badge">${g.sensor}</span>` : "";
+      card.innerHTML = `
+        ${badge}
+        <h2>${g.zh}</h2>
+        <div class="en">${g.en}</div>
+        <div class="links">
+          <a class="btn" href="${g.f}">开始游戏</a>
+          ${trailer}
+        </div>`;
+      grid.appendChild(card);
+    });
+  }
+
+  const allTabs = [["all","全部"], ...Object.entries(CATS)];
+  allTabs.forEach(([key,label],i) => {
+    const t = document.createElement('div');
+    t.className = "tab" + (i===0 ? " active":"");
+    t.textContent = label + (key==="all" ? ` (${GAMES.length})` : ` (${GAMES.filter(g=>g.cat===key).length})`);
+    t.onclick = () => { filter=key; [...tabs.children].forEach(c=>c.classList.remove('active')); t.classList.add('active'); render(); };
+    tabs.appendChild(t);
+  });
+  render();
+</script>
+</body>
+</html>

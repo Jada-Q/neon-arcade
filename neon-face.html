@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<!-- 移动端自适应视口 -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>NEON FACE — 头控躲避·吃豆</title>
+<!-- Google Fonts:像素字 + 界面字(中文回退系统字) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8;
+    --gold:#ffd95e; --green:#5effa0;
+    --bg0:#1a0b2e; --bg1:#2d1149; --bg2:#3b0d5e;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; height:100%; overflow:hidden; background:#0d0420; }
+  body{
+    font-family:'Chakra Petch','PingFang SC','Microsoft YaHei',sans-serif;
+    color:#fff; user-select:none;
+  }
+  #wrap{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  /* 游戏舞台 */
+  #stage{ position:relative; width:100%; height:100%; overflow:hidden;
+    background:linear-gradient(180deg,#240a3e 0%,#3b0d5e 38%,#7a1457 64%,#ff7a3d 88%,#ffd95e 100%); }
+  /* 摄像头镜像半透明背景 */
+  #cam{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    transform:scaleX(-1); opacity:0.28; filter:saturate(1.3) contrast(1.05); display:none; }
+  /* 网格地平线装饰 */
+  #grid{ position:absolute; inset:0; pointer-events:none; opacity:0.55; }
+  /* 主游戏画布(霓虹层) */
+  #game{ position:absolute; inset:0; width:100%; height:100%; }
+
+  /* HUD */
+  #hud{ position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between;
+    align-items:flex-start; padding:14px 16px; pointer-events:none; z-index:6; gap:10px; }
+  .hud-box{ background:rgba(20,6,40,0.55); border:1px solid rgba(94,240,255,0.5);
+    border-radius:10px; padding:8px 12px; backdrop-filter:blur(4px);
+    box-shadow:0 0 14px rgba(94,240,255,0.25); }
+  .hud-label{ font-size:9px; letter-spacing:1px; color:var(--cyan); opacity:0.85; }
+  .hud-val{ font-family:'Press Start 2P',monospace; font-size:16px; margin-top:5px;
+    color:var(--gold); text-shadow:0 0 8px rgba(255,217,94,0.8); }
+  #lives .hud-val{ color:var(--pink); text-shadow:0 0 8px rgba(255,46,136,0.8); }
+  #best .hud-val{ color:var(--green); text-shadow:0 0 8px rgba(94,255,160,0.8); font-size:12px; }
+
+  /* 控制状态条 */
+  #statusbar{ position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+    z-index:6; display:flex; gap:8px; align-items:center; pointer-events:none; flex-wrap:wrap; justify-content:center; }
+  .chip{ font-size:11px; padding:5px 10px; border-radius:20px; background:rgba(20,6,40,0.6);
+    border:1px solid rgba(255,94,200,0.5); box-shadow:0 0 10px rgba(255,94,200,0.2); }
+  .chip b{ color:var(--cyan); }
+
+  /* 按钮 */
+  .btn{ pointer-events:auto; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:700;
+    color:#fff; background:linear-gradient(180deg,#ff2e88,#b3186a); border:1px solid #ff8ec6;
+    border-radius:10px; padding:12px 22px; font-size:15px; letter-spacing:1px;
+    box-shadow:0 0 18px rgba(255,46,136,0.6),inset 0 0 8px rgba(255,255,255,0.2); transition:transform .08s; }
+  .btn:active{ transform:scale(0.96); }
+  .btn.cyan{ background:linear-gradient(180deg,#5ef0ff,#1899b3); border-color:#bff7ff;
+    box-shadow:0 0 18px rgba(94,240,255,0.6),inset 0 0 8px rgba(255,255,255,0.25); color:#08222b; }
+
+  /* 静音按钮 */
+  #mute{ position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:7;
+    pointer-events:auto; cursor:pointer; width:40px; height:40px; border-radius:50%;
+    background:rgba(20,6,40,0.6); border:1px solid rgba(94,240,255,0.6); color:var(--cyan);
+    font-size:18px; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 12px rgba(94,240,255,0.3); }
+
+  /* 遮罩 */
+  .overlay{ position:absolute; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at 50% 30%,rgba(59,13,94,0.92),rgba(13,4,32,0.97)); padding:18px; }
+  .panel{ width:min(560px,94vw); max-height:94vh; overflow:auto; text-align:center;
+    background:rgba(18,6,38,0.86); border:1px solid rgba(94,240,255,0.45); border-radius:18px;
+    padding:26px 24px; box-shadow:0 0 40px rgba(255,46,136,0.35),inset 0 0 30px rgba(94,240,255,0.08); }
+  .title{ font-family:'Press Start 2P',monospace; font-size:24px; line-height:1.5;
+    background:linear-gradient(90deg,#5ef0ff,#ff2e88,#ffd95e); -webkit-background-clip:text;
+    background-clip:text; color:transparent; text-shadow:0 0 18px rgba(255,46,136,0.4); margin:0 0 6px; }
+  .sub{ font-size:13px; color:var(--cyan); letter-spacing:2px; margin-bottom:16px; opacity:0.9; }
+  .how{ text-align:left; font-size:14px; line-height:1.75; margin:14px auto; max-width:440px; }
+  .how li{ margin-bottom:6px; }
+  .how b{ color:var(--gold); }
+  .key{ display:inline-block; padding:1px 7px; border:1px solid var(--cyan); border-radius:5px;
+    font-size:12px; color:var(--cyan); margin:0 2px; }
+  .warn{ font-size:12px; color:var(--magenta); margin-top:12px; line-height:1.6; }
+  .ok{ color:var(--green); }
+  .row{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:18px; }
+  .bigscore{ font-family:'Press Start 2P',monospace; font-size:30px; color:var(--gold);
+    text-shadow:0 0 16px rgba(255,217,94,0.8); margin:10px 0; }
+  .hidden{ display:none !important; }
+  .blink{ animation:bl 1s steps(2) infinite; }
+  @keyframes bl{ 50%{ opacity:0.35; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <video id="cam" playsinline muted autoplay></video>
+    <canvas id="grid"></canvas>
+    <canvas id="game"></canvas>
+
+    <button id="mute" title="静音">♪</button>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="hud-box" id="score"><div class="hud-label">SCORE</div><div class="hud-val">0</div></div>
+      <div class="hud-box" id="best"><div class="hud-label">BEST</div><div class="hud-val">0</div></div>
+      <div class="hud-box" id="lives"><div class="hud-label">LIVES</div><div class="hud-val">♥♥♥</div></div>
+    </div>
+
+    <div id="statusbar">
+      <div class="chip" id="ctrlChip">控制:<b>检测中…</b></div>
+      <div class="chip" id="mouthChip">张嘴护盾:<b>就绪</b></div>
+    </div>
+
+    <!-- 开始遮罩 -->
+    <div class="overlay" id="startOv">
+      <div class="panel">
+        <h1 class="title">NEON&nbsp;FACE</h1>
+        <div class="sub">头控躲避 · 吃豆 · OUTRUN</div>
+        <ul class="how">
+          <li><b>移动:</b>头往左/右,霓虹角色跟着左右走。</li>
+          <li><b>吃豆:</b>接住下落的 <span style="color:var(--green)">霓虹光点</span> 得分,连击加成。</li>
+          <li><b>躲避:</b>别碰 <span style="color:var(--pink)">红色障碍</span>,撞到 -1 命。</li>
+          <li><b>张嘴:</b>张开嘴 = 开 <span style="color:var(--cyan)">护盾</span>(短暂无敌 + 清屏),有冷却。</li>
+          <li><b>兜底:</b>无摄像头/拒权限可用 <span class="key">← →</span> 或 <b>鼠标</b>移动、<span class="key">空格</span>开护盾。</li>
+        </ul>
+        <div class="warn">
+          需要<b style="color:var(--cyan)">摄像头权限</b>(用于检测头部位置/张嘴)。<br>
+          建议用 <b class="ok">Chrome / Edge</b>,点开始后浏览器会询问,请选择「允许」。<br>
+          画面只在本地处理,不上传。拒绝也能用键盘/鼠标玩。
+        </div>
+        <div class="row">
+          <button class="btn cyan" id="startCam">开始(开启摄像头)</button>
+          <button class="btn" id="startKbd">仅键盘 / 鼠标</button>
+        </div>
+        <div class="warn" id="loadHint"></div>
+      </div>
+    </div>
+
+    <!-- 结束遮罩 -->
+    <div class="overlay hidden" id="endOv">
+      <div class="panel">
+        <h1 class="title" style="font-size:20px">GAME OVER</h1>
+        <div class="sub" id="endSub">合成波湮灭</div>
+        <div class="bigscore" id="finalScore">0</div>
+        <div style="font-size:14px;color:var(--green)">最高分 <span id="endBest">0</span></div>
+        <div class="row">
+          <button class="btn cyan" id="again">再来一局</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MediaPipe FaceMesh(CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script>
+"use strict";
+/* =========================================================================
+   NEON FACE — 头控躲避/吃豆(合成波 OutRun)
+   - MediaPipe FaceMesh 检测头部水平位置 + 张嘴(上下唇距离)
+   - 头左右 → 玩家左右;张嘴 → 护盾(清屏+无敌)
+   - 无摄像头/拒权限 → 键盘(← →/空格)或鼠标兜底
+   ========================================================================= */
+
+/* ---------------- DOM ---------------- */
+const stage   = document.getElementById('stage');
+const camVid  = document.getElementById('cam');
+const gridCv  = document.getElementById('grid');
+const gameCv  = document.getElementById('game');
+const gctx    = gameCv.getContext('2d');
+const gridctx = gridCv.getContext('2d');
+
+const scoreEl = document.querySelector('#score .hud-val');
+const bestEl  = document.querySelector('#best .hud-val');
+const livesEl = document.querySelector('#lives .hud-val');
+const ctrlChip= document.querySelector('#ctrlChip b');
+const mouthChip=document.querySelector('#mouthChip b');
+
+const startOv = document.getElementById('startOv');
+const endOv   = document.getElementById('endOv');
+const startCamBtn = document.getElementById('startCam');
+const startKbdBtn = document.getElementById('startKbd');
+const againBtn= document.getElementById('again');
+const muteBtn = document.getElementById('mute');
+const loadHint= document.getElementById('loadHint');
+const finalScoreEl = document.getElementById('finalScore');
+const endBestEl = document.getElementById('endBest');
+const endSub  = document.getElementById('endSub');
+
+/* ---------------- 状态 ---------------- */
+const BEST_KEY = 'neonFaceBest';
+let W=0, H=0, DPR=1;
+let running=false, gameOver=false;
+let score=0, lives=3, best=Number(localStorage.getItem(BEST_KEY)||0);
+let combo=0, comboTimer=0;
+let muted=false;
+let prevBest=best;          // 本局开始前的最高分(用于判断是否新纪录)
+let newRecord=false;        // 本局是否刷新纪录
+
+let controlMode='none';      // 'face' | 'kbd'
+let targetX=0.5;             // 玩家目标水平位置(0..1,已镜像)
+let faceActive=false;        // 当前帧检测到脸
+let faceBox=null;            // 检测到的脸框(归一化,已按显示镜像)
+let mouthOpenRatio=0;        // 张嘴比例
+let mouthTriggered=false;    // 张嘴边沿触发锁
+
+/* 键盘兜底 */
+let keyLeft=false, keyRight=false;
+let useMouse=false;
+
+bestEl.textContent = best;
+
+/* ---------------- 画布尺寸 ---------------- */
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = stage.clientWidth; H = stage.clientHeight;
+  for(const cv of [gameCv, gridCv]){
+    cv.width = Math.floor(W*DPR); cv.height = Math.floor(H*DPR);
+    cv.style.width=W+'px'; cv.style.height=H+'px';
+  }
+  gctx.setTransform(DPR,0,0,DPR,0,0);
+  gridctx.setTransform(DPR,0,0,DPR,0,0);
+  drawGrid();
+}
+window.addEventListener('resize', ()=>{ try{ resize(); }catch(e){ console.warn(e); } });
+
+/* 静态合成波网格背景 */
+function drawGrid(){
+  try{
+    gridctx.clearRect(0,0,W,H);
+    const horizon = H*0.62;
+    // 太阳
+    const sunR = Math.min(W,H)*0.18;
+    const cx=W/2, cy=horizon-sunR*0.35;
+    const g = gridctx.createLinearGradient(0,cy-sunR,0,cy+sunR);
+    g.addColorStop(0,'#ffd95e'); g.addColorStop(0.5,'#ff5ec8'); g.addColorStop(1,'#ff2e88');
+    gridctx.save();
+    gridctx.beginPath(); gridctx.arc(cx,cy,sunR,0,Math.PI*2); gridctx.clip();
+    gridctx.fillStyle=g; gridctx.fillRect(cx-sunR,cy-sunR,sunR*2,sunR*2);
+    // 太阳条纹
+    gridctx.globalCompositeOperation='destination-out';
+    for(let i=0;i<6;i++){ const yy=cy+sunR*0.15+i*(sunR*0.16); gridctx.fillStyle='#000';
+      gridctx.fillRect(cx-sunR, yy, sunR*2, sunR*0.07); }
+    gridctx.restore();
+    // 透视网格
+    gridctx.strokeStyle='rgba(94,240,255,0.5)'; gridctx.lineWidth=1.2;
+    gridctx.beginPath();
+    for(let i=-10;i<=10;i++){ const x=cx+i*(W/12); gridctx.moveTo(cx + i*8, horizon); gridctx.lineTo(x*1.6-cx*0.6, H); }
+    let y=horizon, step=8;
+    for(let k=0;k<22 && y<H;k++){ gridctx.moveTo(0,y); gridctx.lineTo(W,y); y+=step; step*=1.18; }
+    gridctx.stroke();
+  }catch(e){ console.warn('grid',e); }
+}
+
+/* =========================================================================
+   Web Audio:程序化音效 + 合成波循环配乐
+   ========================================================================= */
+let AC=null, masterGain=null, musicGain=null, sfxGain=null, musicTimer=null;
+function initAudio(){
+  if(AC) return;
+  try{
+    AC = new (window.AudioContext||window.webkitAudioContext)();
+    masterGain = AC.createGain(); masterGain.gain.value = muted?0:0.9; masterGain.connect(AC.destination);
+    musicGain = AC.createGain(); musicGain.gain.value=0.32; musicGain.connect(masterGain);
+    sfxGain   = AC.createGain(); sfxGain.gain.value=0.6; sfxGain.connect(masterGain);
+  }catch(e){ console.warn('audio init',e); }
+}
+function resumeAudio(){ try{ if(AC && AC.state==='suspended') AC.resume(); }catch(e){} }
+
+function blip(freq, dur, type='square', gain=0.5, slideTo=null){
+  if(!AC || muted) return;
+  try{
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq, AC.currentTime);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, AC.currentTime+dur);
+    g.gain.setValueAtTime(0.0001, AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(gain, AC.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime+dur);
+    o.connect(g); g.connect(sfxGain); o.start(); o.stop(AC.currentTime+dur+0.02);
+  }catch(e){}
+}
+function sfxPick(){ blip(660,0.12,'square',0.4, 1100); }      // 吃豆
+function sfxHit(){ blip(160,0.35,'sawtooth',0.6, 60); }       // 受伤
+function sfxShield(){ blip(300,0.4,'triangle',0.5, 900); blip(900,0.25,'sine',0.3); } // 护盾
+function sfxOver(){ blip(440,0.2,'square',0.5,110); setTimeout(()=>blip(220,0.5,'sawtooth',0.5,55),120); }
+
+/* 合成波循环:简单琶音 + 低音 */
+const bassNotes=[55,55,82.4,73.4];          // A1 A1 E2 D2
+const arpNotes=[440,554,659,880,659,554];   // A C# E A E C#
+let musicStep=0;
+function startMusic(){
+  if(!AC || musicTimer) return;
+  const beat=0.30;
+  musicTimer=setInterval(()=>{
+    if(muted) return;
+    try{
+      const t=AC.currentTime;
+      // bass
+      const bo=AC.createOscillator(), bg=AC.createGain();
+      bo.type='sawtooth'; bo.frequency.value=bassNotes[(musicStep>>1)%bassNotes.length];
+      bg.gain.setValueAtTime(0.0001,t); bg.gain.exponentialRampToValueAtTime(0.18,t+0.02);
+      bg.gain.exponentialRampToValueAtTime(0.0001,t+beat*0.9);
+      bo.connect(bg); bg.connect(musicGain); bo.start(t); bo.stop(t+beat);
+      // arp
+      const ao=AC.createOscillator(), ag=AC.createGain();
+      ao.type='square'; ao.frequency.value=arpNotes[musicStep%arpNotes.length];
+      ag.gain.setValueAtTime(0.0001,t); ag.gain.exponentialRampToValueAtTime(0.10,t+0.01);
+      ag.gain.exponentialRampToValueAtTime(0.0001,t+beat*0.6);
+      ao.connect(ag); ag.connect(musicGain); ao.start(t); ao.stop(t+beat);
+      musicStep++;
+    }catch(e){}
+  }, 300);
+}
+function stopMusic(){ if(musicTimer){ clearInterval(musicTimer); musicTimer=null; } }
+
+muteBtn.addEventListener('click', ()=>{
+  muted=!muted;
+  muteBtn.textContent = muted?'✕':'♪';
+  if(masterGain) masterGain.gain.value = muted?0:0.9;
+});
+
+/* =========================================================================
+   游戏实体
+   ========================================================================= */
+const player = { x:0.5, px:0.5, y:0, w:64, h:64, shield:0, shieldCD:0, hitFlash:0 };
+let items=[];      // 光点
+let obstacles=[];  // 障碍
+let particles=[];
+let spawnT=0, obT=0;
+let difficulty=1, elapsed=0;
+
+function reset(){
+  score=0; lives=3; combo=0; comboTimer=0; difficulty=1; elapsed=0;
+  items=[]; obstacles=[]; particles=[]; spawnT=0; obT=0;
+  player.x=0.5; player.px=0.5; player.shield=0; player.shieldCD=0; player.hitFlash=0;
+  targetX=0.5; gameOver=false;
+  prevBest=best; newRecord=false;
+  updateHUD();
+}
+function updateHUD(){
+  scoreEl.textContent = score;
+  bestEl.textContent = best;
+  livesEl.textContent = lives>0 ? '♥'.repeat(lives) : '—';
+}
+
+function spawnItem(){
+  items.push({ x:0.08+Math.random()*0.84, y:-0.05, vy:0.18+Math.random()*0.05,
+    r:13+Math.random()*4, hue:Math.random()<0.5?'#5effa0':'#5ef0ff', spin:Math.random()*6.28 });
+}
+function spawnObstacle(){
+  obstacles.push({ x:0.08+Math.random()*0.84, y:-0.06, vy:0.20+Math.random()*0.06,
+    s:26+Math.random()*16, rot:Math.random()*6.28, vr:(Math.random()-0.5)*4 });
+}
+function burst(x,y,color,n=14){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*6.28, sp=40+Math.random()*160;
+    particles.push({ x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.5+Math.random()*0.4, t:0, color, r:2+Math.random()*3 });
+  }
+}
+
+/* 护盾触发(张嘴 / 空格) */
+function triggerShield(){
+  if(!running || gameOver) return;
+  if(player.shieldCD>0 || player.shield>0) return;
+  player.shield=2.4; player.shieldCD=4.0;
+  sfxShield();
+  // 清屏:把当前屏内障碍变成得分爆炸
+  const px=player.x*W, py=player.y;
+  burst(px,py,'#5ef0ff',26);
+  for(const o of obstacles){ burst(o.x*W, o.y*H, '#ff5ec8', 8); }
+  obstacles.length=0;
+  flashShield=0.5;
+}
+let flashShield=0;
+
+/* =========================================================================
+   输入:键盘 / 鼠标兜底
+   ========================================================================= */
+window.addEventListener('keydown', (e)=>{
+  const k=(e.key||'').toLowerCase();
+  if(e.key==='ArrowLeft'||k==='a'){ keyLeft=true; }
+  if(e.key==='ArrowRight'||k==='d'){ keyRight=true; }
+  if(e.code==='Space'){ e.preventDefault(); triggerShield(); }
+  if(e.key==='Enter' && gameOver){ restart(); }
+});
+window.addEventListener('keyup', (e)=>{
+  const k=(e.key||'').toLowerCase();
+  if(e.key==='ArrowLeft'||k==='a') keyLeft=false;
+  if(e.key==='ArrowRight'||k==='d') keyRight=false;
+});
+stage.addEventListener('mousemove', (e)=>{
+  const r=stage.getBoundingClientRect();
+  if(controlMode!=='face'){ useMouse=true; targetX = Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)); }
+});
+stage.addEventListener('touchmove', (e)=>{
+  if(!e.touches[0]) return;
+  const r=stage.getBoundingClientRect();
+  if(controlMode!=='face'){ targetX=Math.max(0,Math.min(1,(e.touches[0].clientX-r.left)/r.width)); }
+}, {passive:true});
+stage.addEventListener('click', ()=>{ if(controlMode!=='face' && running && !gameOver) triggerShield(); });
+
+/* =========================================================================
+   MediaPipe FaceMesh
+   ========================================================================= */
+let faceMesh=null, mpCamera=null, camStream=null;
+let faceLost=0;
+
+function onFaceResults(res){
+  try{
+    if(res.multiFaceLandmarks && res.multiFaceLandmarks.length>0){
+      const lm = res.multiFaceLandmarks[0];
+      faceActive=true; faceLost=0;
+
+      // 鼻尖(1)水平位置;摄像头镜像显示,故 displayX = 1 - lm.x
+      const nose = lm[1];
+      const dispX = 1 - nose.x;
+      // 放大灵敏度:把 [0.25,0.75] 映射到 [0,1]
+      let mapped = (dispX-0.5)*2.0 + 0.5;
+      targetX = Math.max(0.02, Math.min(0.98, mapped));
+
+      // 脸框(用部分点估边界),已镜像
+      let minx=1,maxx=0,miny=1,maxy=0;
+      const idxs=[10,152,234,454,1]; // 上、下、左、右、鼻
+      for(const i of idxs){ const p=lm[i]; minx=Math.min(minx,p.x); maxx=Math.max(maxx,p.x);
+        miny=Math.min(miny,p.y); maxy=Math.max(maxy,p.y); }
+      faceBox={ x:1-maxx, y:miny, w:(maxx-minx), h:(maxy-miny), cx:dispX, cy:nose.y };
+
+      // 张嘴:上唇(13)与下唇(14)垂直距离 / 嘴宽(61-291)归一
+      const upper=lm[13], lower=lm[14], left=lm[61], right=lm[291];
+      const vDist=Math.hypot(upper.x-lower.x, upper.y-lower.y);
+      const mWidth=Math.hypot(left.x-right.x, left.y-right.y)||0.0001;
+      mouthOpenRatio = vDist/mWidth;
+      const open = mouthOpenRatio > 0.38;
+      if(open && !mouthTriggered){ mouthTriggered=true; triggerShield(); }
+      if(mouthOpenRatio < 0.25) mouthTriggered=false;
+
+    } else {
+      faceActive=false; faceLost++;
+    }
+  }catch(e){ console.warn('faceResults',e); }
+}
+
+async function startFaceMesh(){
+  loadHint.textContent='正在加载人脸检测模型…';
+  // 检测库是否可用
+  if(typeof FaceMesh==='undefined' || typeof Camera==='undefined'){
+    throw new Error('MediaPipe 库加载失败(可能网络/CDN被拦)');
+  }
+  // 浏览器能力检测(非安全上下文 / 不支持 getUserMedia)
+  if(!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia!=='function'){
+    throw new Error('浏览器不支持摄像头(需 https 或受支持的浏览器)');
+  }
+  // 请求摄像头(用户手势后)。注意:@mediapipe/camera_utils 的 Camera 内部会
+  // 自行调用 getUserMedia 并接管 camVid,故这里不再手动 getUserMedia,避免重复
+  // 占用摄像头/触发两次权限弹窗。
+  camVid.style.display='block';
+
+  faceMesh = new FaceMesh({ locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+  faceMesh.setOptions({ maxNumFaces:1, refineLandmarks:false, minDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+  faceMesh.onResults(onFaceResults);
+
+  mpCamera = new Camera(camVid, {
+    onFrame: async ()=>{ try{ await faceMesh.send({image:camVid}); }catch(e){} },
+    facingMode:'user',
+    width:640, height:480
+  });
+  // Camera.start() 返回 Promise:必须 await,否则被拒(拒权限/无摄像头)时
+  // 会变成未捕获的 rejection,onStartCam 的兜底逻辑不会触发。
+  await mpCamera.start();
+  // 保存底层流引用以便结束时停止
+  try{ camStream = (camVid.srcObject instanceof MediaStream) ? camVid.srcObject : null; }catch(e){ camStream=null; }
+  loadHint.textContent='';
+}
+
+/* =========================================================================
+   主循环
+   ========================================================================= */
+let lastT=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  try{
+    if(!lastT) lastT=ts;
+    let dt=(ts-lastT)/1000; lastT=ts;
+    if(dt>0.05) dt=0.05;            // 防卡顿跳变
+    if(running && !gameOver) update(dt);
+    render(dt);
+  }catch(e){ console.warn('loop',e); }
+}
+
+function update(dt){
+  elapsed+=dt;
+  difficulty = 1 + elapsed*0.05;   // 难度随时间递增
+
+  // ---- 控制:键盘覆盖 / 否则 targetX(脸或鼠标) ----
+  if(controlMode==='kbd' || (!faceActive && controlMode==='face')){
+    // 键盘移动(也作为脸丢失时兜底)
+    if(keyLeft) targetX -= 0.9*dt;
+    if(keyRight)targetX += 0.9*dt;
+    targetX=Math.max(0.02,Math.min(0.98,targetX));
+  }
+  // 平滑插值
+  player.px = player.x;
+  player.x += (targetX - player.x) * Math.min(1, dt*9);
+  player.y = H*0.80;
+
+  // 控制状态显示
+  if(controlMode==='face'){
+    ctrlChip.textContent = faceActive ? '头部 ✓' : '脸丢失·用←→';
+    ctrlChip.parentElement.style.borderColor = faceActive?'rgba(94,255,160,0.6)':'rgba(255,46,136,0.7)';
+  }
+
+  // 张嘴状态显示
+  if(controlMode==='face'){
+    mouthChip.textContent = player.shieldCD>0 ? `冷却${player.shieldCD.toFixed(1)}s`
+      : (mouthOpenRatio>0.38?'触发!':'就绪');
+  } else {
+    mouthChip.textContent = player.shieldCD>0 ? `冷却${player.shieldCD.toFixed(1)}s` : '空格/点击';
+  }
+
+  // ---- 计时器/护盾 ----
+  if(player.shield>0) player.shield-=dt;
+  if(player.shieldCD>0) player.shieldCD-=dt;
+  if(player.hitFlash>0) player.hitFlash-=dt;
+  if(flashShield>0) flashShield-=dt;
+  if(comboTimer>0){ comboTimer-=dt; if(comboTimer<=0) combo=0; }
+
+  // ---- 生成 ----
+  spawnT-=dt; obT-=dt;
+  const itemEvery = Math.max(0.42, 0.95 - elapsed*0.012);
+  const obEvery   = Math.max(0.55, 1.30 - elapsed*0.018);
+  if(spawnT<=0){ spawnItem(); spawnT=itemEvery; }
+  if(obT<=0){ spawnObstacle(); obT=obEvery; }
+
+  const px=player.x*W, py=player.y;
+  const pr=player.w*0.5;
+
+  // ---- 光点 ----
+  for(let i=items.length-1;i>=0;i--){
+    const it=items[i];
+    it.y += it.vy*difficulty*dt;
+    it.spin += dt*4;
+    const ix=it.x*W, iy=it.y*H;
+    if(Math.hypot(ix-px, iy-py) < pr+it.r){
+      combo++; comboTimer=2.0;
+      const gained = 10 + Math.min(combo,10)*2;
+      score += gained;
+      if(score>best){ best=score; newRecord=true; try{ localStorage.setItem(BEST_KEY,best); }catch(e){} }
+      burst(ix,iy,it.hue,12); sfxPick();
+      items.splice(i,1); updateHUD(); continue;
+    }
+    if(it.y>1.1) items.splice(i,1);
+  }
+
+  // ---- 障碍 ----
+  for(let i=obstacles.length-1;i>=0;i--){
+    const o=obstacles[i];
+    o.y += o.vy*difficulty*dt;
+    o.rot += o.vr*dt;
+    const ox=o.x*W, oy=o.y*H;
+    if(Math.hypot(ox-px, oy-py) < pr+o.s*0.45){
+      if(player.shield>0){
+        burst(ox,oy,'#5ef0ff',12); obstacles.splice(i,1); continue;
+      }
+      // 受伤
+      obstacles.splice(i,1);
+      lives--; player.hitFlash=0.6; combo=0;
+      burst(px,py,'#ff2e88',22); sfxHit();
+      updateHUD();
+      if(lives<=0){ endGame(); }
+      continue;
+    }
+    if(o.y>1.1) obstacles.splice(i,1);
+  }
+
+  // ---- 粒子 ----
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.t+=dt;
+    p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=140*dt;
+    if(p.t>=p.life) particles.splice(i,1);
+  }
+}
+
+/* ---------------- 渲染 ---------------- */
+function render(dt){
+  gctx.clearRect(0,0,W,H);
+
+  // 受伤红闪
+  if(player.hitFlash>0){
+    gctx.fillStyle=`rgba(255,46,136,${0.35*player.hitFlash})`;
+    gctx.fillRect(0,0,W,H);
+  }
+  if(flashShield>0){
+    gctx.fillStyle=`rgba(94,240,255,${0.4*flashShield})`;
+    gctx.fillRect(0,0,W,H);
+  }
+
+  if(!running) return;
+
+  // 标出脸的位置(摄像头模式)
+  if(controlMode==='face' && faceActive && faceBox){
+    const bx=faceBox.x*W, by=faceBox.y*H, bw=faceBox.w*W, bh=faceBox.h*H;
+    gctx.save();
+    gctx.strokeStyle='rgba(94,240,255,0.9)'; gctx.lineWidth=2;
+    gctx.shadowColor='#5ef0ff'; gctx.shadowBlur=14;
+    roundRect(gctx, bx, by, bw, bh, 10); gctx.stroke();
+    // 中心十字 + 标签
+    gctx.fillStyle='#5ef0ff'; gctx.font="10px 'Press Start 2P', monospace";
+    gctx.shadowBlur=6;
+    gctx.fillText('FACE', bx, by-8);
+    // 连接线到玩家(显示映射)
+    gctx.strokeStyle='rgba(255,217,94,0.4)'; gctx.setLineDash([5,5]); gctx.lineWidth=1.5;
+    gctx.beginPath(); gctx.moveTo(faceBox.cx*W, faceBox.cy*H); gctx.lineTo(player.x*W, player.y); gctx.stroke();
+    gctx.setLineDash([]);
+    gctx.restore();
+  }
+
+  // 光点
+  for(const it of items){
+    const ix=it.x*W, iy=it.y*H;
+    gctx.save(); gctx.translate(ix,iy); gctx.rotate(it.spin);
+    gctx.shadowColor=it.hue; gctx.shadowBlur=18;
+    gctx.fillStyle=it.hue;
+    gctx.beginPath();
+    for(let k=0;k<4;k++){ const a=it.spin*0+k*Math.PI/2; gctx.lineTo(Math.cos(a)*it.r, Math.sin(a)*it.r);
+      gctx.lineTo(Math.cos(a+0.785)*it.r*0.45, Math.sin(a+0.785)*it.r*0.45); }
+    gctx.closePath(); gctx.fill();
+    gctx.fillStyle='#fff'; gctx.beginPath(); gctx.arc(0,0,it.r*0.3,0,6.28); gctx.fill();
+    gctx.restore();
+  }
+
+  // 障碍(红色尖刺方块)
+  for(const o of obstacles){
+    const ox=o.x*W, oy=o.y*H, s=o.s;
+    gctx.save(); gctx.translate(ox,oy); gctx.rotate(o.rot);
+    gctx.shadowColor='#ff2e88'; gctx.shadowBlur=16;
+    gctx.strokeStyle='#ff2e88'; gctx.lineWidth=3; gctx.fillStyle='rgba(255,46,136,0.18)';
+    gctx.beginPath();
+    for(let k=0;k<6;k++){ const a=k*Math.PI/3; const rr = (k%2===0)? s*0.5 : s*0.32;
+      gctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); }
+    gctx.closePath(); gctx.fill(); gctx.stroke();
+    gctx.fillStyle='#ff5ec8'; gctx.beginPath(); gctx.arc(0,0,s*0.12,0,6.28); gctx.fill();
+    gctx.restore();
+  }
+
+  // 玩家(霓虹角色)
+  drawPlayer();
+
+  // 粒子
+  for(const p of particles){
+    const a=1-(p.t/p.life);
+    gctx.save(); gctx.globalAlpha=Math.max(0,a);
+    gctx.shadowColor=p.color; gctx.shadowBlur=10; gctx.fillStyle=p.color;
+    gctx.beginPath(); gctx.arc(p.x,p.y,p.r,0,6.28); gctx.fill();
+    gctx.restore();
+  }
+
+  // combo 提示
+  if(combo>1 && comboTimer>0){
+    gctx.save();
+    gctx.font="14px 'Press Start 2P', monospace";
+    gctx.fillStyle='#ffd95e'; gctx.shadowColor='#ffd95e'; gctx.shadowBlur=10;
+    gctx.textAlign='center';
+    gctx.globalAlpha=Math.min(1,comboTimer);
+    gctx.fillText('COMBO x'+combo, player.x*W, player.y-58);
+    gctx.restore();
+  }
+}
+
+function drawPlayer(){
+  const px=player.x*W, py=player.y;
+  const w=player.w, h=player.h;
+  gctx.save(); gctx.translate(px,py);
+  // 移动倾斜
+  const tilt = Math.max(-0.25,Math.min(0.25,(player.x-player.px)*30));
+  gctx.rotate(tilt);
+
+  const flashing = player.hitFlash>0 && (Math.floor(player.hitFlash*16)%2===0);
+  const bodyCol = flashing ? '#ffffff' : '#ff2e88';
+
+  // 护盾光环
+  if(player.shield>0){
+    const pulse = 1+0.08*Math.sin(performance.now()/80);
+    gctx.save();
+    gctx.strokeStyle=`rgba(94,240,255,${0.5+0.4*Math.sin(performance.now()/120)})`;
+    gctx.lineWidth=3; gctx.shadowColor='#5ef0ff'; gctx.shadowBlur=22;
+    gctx.beginPath(); gctx.arc(0,-h*0.1, w*0.7*pulse, 0, 6.28); gctx.stroke();
+    gctx.restore();
+  }
+
+  gctx.shadowColor=bodyCol; gctx.shadowBlur=18;
+  // 角色:发光胶囊身体 + 头 + 接物托盘
+  gctx.fillStyle=bodyCol;
+  // 托盘(接物)
+  gctx.fillStyle='#5ef0ff'; gctx.shadowColor='#5ef0ff';
+  roundRect(gctx,-w*0.55,-h*0.05,w*1.1,8,4); gctx.fill();
+  // 身体
+  gctx.fillStyle=bodyCol; gctx.shadowColor=bodyCol;
+  roundRect(gctx,-w*0.28, -h*0.05, w*0.56, h*0.55, 8); gctx.fill();
+  // 头
+  gctx.beginPath(); gctx.arc(0,-h*0.18, w*0.22, 0, 6.28); gctx.fill();
+  // 眼睛(青)
+  gctx.fillStyle='#5ef0ff'; gctx.shadowColor='#5ef0ff'; gctx.shadowBlur=8;
+  gctx.beginPath(); gctx.arc(-w*0.08,-h*0.20,3,0,6.28); gctx.arc(w*0.08,-h*0.20,3,0,6.28); gctx.fill();
+  gctx.restore();
+}
+
+function roundRect(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath();
+}
+
+/* =========================================================================
+   流程控制
+   ========================================================================= */
+function beginGame(mode){
+  controlMode=mode;
+  reset();
+  running=true; gameOver=false;
+  startOv.classList.add('hidden');
+  endOv.classList.add('hidden');
+  initAudio(); resumeAudio(); startMusic();
+}
+
+async function onStartCam(){
+  initAudio(); resumeAudio();
+  startCamBtn.disabled=true; startKbdBtn.disabled=true;
+  loadHint.textContent='请求摄像头权限中…';
+  try{
+    await startFaceMesh();
+    ctrlChip.parentElement.style.display='';
+    beginGame('face');
+  }catch(err){
+    console.warn('cam fail',err);
+    loadHint.innerHTML = `<span style="color:var(--magenta)">摄像头不可用:${(err&&err.message)||err}。</span><br>
+      已切换为<span class="ok">键盘/鼠标</span>模式。请用 ← → 或鼠标移动,空格开护盾。`;
+    camVid.style.display='none';
+    setTimeout(()=>{ beginGame('kbd'); }, 1400);
+  }finally{
+    startCamBtn.disabled=false; startKbdBtn.disabled=false;
+  }
+}
+function onStartKbd(){
+  initAudio(); resumeAudio();
+  beginGame('kbd');
+}
+
+function endGame(){
+  gameOver=true; running=false;
+  stopMusic();
+  sfxOver();
+  finalScoreEl.textContent=score;
+  endBestEl.textContent=best;
+  endSub.textContent = (newRecord && score>prevBest) ? '新纪录!' : '合成波湮灭';
+  endOv.classList.remove('hidden');
+}
+function restart(){
+  endOv.classList.add('hidden');
+  reset(); running=true; gameOver=false;
+  resumeAudio(); startMusic();
+}
+
+startCamBtn.addEventListener('click', onStartCam);
+startKbdBtn.addEventListener('click', onStartKbd);
+againBtn.addEventListener('click', restart);
+
+/* ---------------- 启动 ---------------- */
+try{ resize(); }catch(e){ console.warn(e); }
+requestAnimationFrame(loop);
+
+// CDN 加载失败的友好提示
+window.addEventListener('load', ()=>{
+  setTimeout(()=>{
+    if(typeof FaceMesh==='undefined'){
+      loadHint.innerHTML='<span style="color:var(--magenta)">提示:人脸库未加载(可能离线/CDN被拦)。可直接用「仅键盘/鼠标」模式游玩。</span>';
+    }
+  }, 2500);
+});
+</script>
+</body>
+</html>

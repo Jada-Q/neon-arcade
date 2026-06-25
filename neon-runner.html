@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>NEON RUNNER · 霓虹无尽跑酷</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ============ 全局合成波/OutRun 风格 ============ */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8;
+    --gold:#ffd95e; --green:#5effa0;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#160a36; }
+  body{
+    font-family:'Chakra Petch','Microsoft YaHei',system-ui,sans-serif;
+    /* 日落渐变背景 */
+    background:linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+    color:#fff; user-select:none; -webkit-user-select:none; touch-action:none;
+  }
+  #app{ position:fixed; inset:0; }
+  canvas#scene{ display:block; width:100%; height:100%; }
+
+  /* CRT 扫描线叠加 */
+  #crt{
+    position:fixed; inset:0; pointer-events:none; z-index:50;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.25) 0px, rgba(0,0,0,.25) 1px, transparent 2px, transparent 3px);
+    opacity:.35; mix-blend-mode:multiply;
+  }
+  /* 红闪/抖动 */
+  #flash{
+    position:fixed; inset:0; pointer-events:none; z-index:45;
+    background:radial-gradient(circle at center, rgba(255,46,136,.0), rgba(255,46,136,.0));
+    opacity:0; transition:opacity .08s;
+  }
+
+  /* ============ HUD ============ */
+  #hud{
+    position:fixed; top:0; left:0; right:0; z-index:30;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:14px 16px; pointer-events:none;
+  }
+  .hud-box{
+    background:rgba(22,10,54,.55);
+    border:2px solid var(--cyan);
+    box-shadow:4px 4px 0 var(--pink);
+    padding:8px 12px; border-radius:4px;
+    backdrop-filter:blur(2px);
+  }
+  .hud-label{ font-family:'Press Start 2P'; font-size:8px; color:var(--cyan); letter-spacing:1px; }
+  .hud-val{ font-family:'Press Start 2P'; font-size:15px; color:#fff; margin-top:5px; text-shadow:0 0 8px var(--pink); }
+  #coinVal{ color:var(--gold); text-shadow:0 0 8px var(--gold); }
+  #bestVal{ color:var(--green); text-shadow:0 0 8px var(--green); font-size:11px; }
+
+  /* 静音按钮 */
+  #muteBtn{
+    position:fixed; top:14px; right:16px; z-index:31; pointer-events:auto;
+    width:46px; height:46px; cursor:pointer;
+    background:rgba(22,10,54,.7); color:var(--gold);
+    border:2px solid var(--gold); box-shadow:3px 3px 0 var(--magenta);
+    border-radius:6px; font-size:20px; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #muteBtn:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--magenta); }
+
+  /* ============ 遮罩(开始/结束) ============ */
+  .overlay{
+    position:fixed; inset:0; z-index:40;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    background:radial-gradient(circle at 50% 38%, rgba(122,42,110,.35), rgba(11,5,28,.86) 70%);
+    backdrop-filter:blur(3px);
+  }
+  .overlay.hidden{ display:none; }
+  .title{
+    font-family:'Press Start 2P'; font-size:clamp(20px,6vw,44px); line-height:1.4;
+    color:var(--cyan); text-shadow:0 0 12px var(--cyan), 4px 4px 0 var(--pink);
+    margin-bottom:6px;
+  }
+  .subtitle{
+    font-family:'Press Start 2P'; font-size:clamp(9px,2.6vw,13px); color:var(--magenta);
+    text-shadow:0 0 8px var(--magenta); margin-bottom:26px; letter-spacing:1px;
+  }
+  .howto{
+    max-width:520px; font-size:clamp(13px,3.6vw,16px); line-height:1.9; color:#ffe9f6;
+    margin-bottom:28px; font-weight:600;
+  }
+  .howto b{ color:var(--gold); }
+  .btn{
+    pointer-events:auto; cursor:pointer;
+    font-family:'Press Start 2P'; font-size:clamp(12px,3.4vw,16px);
+    color:#160a36; background:var(--gold);
+    border:3px solid #fff; box-shadow:5px 5px 0 var(--pink);
+    padding:16px 28px; border-radius:6px; letter-spacing:1px;
+    transition:transform .05s;
+  }
+  .btn:active{ transform:translate(3px,3px); box-shadow:2px 2px 0 var(--pink); }
+  .btn.pulse{ animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
+
+  #finalScore{
+    font-family:'Press Start 2P'; font-size:clamp(14px,4.4vw,22px); color:#fff;
+    text-shadow:0 0 10px var(--pink); margin:8px 0;
+  }
+  #finalBest{ font-family:'Press Start 2P'; font-size:11px; color:var(--green); margin-bottom:24px; }
+  .newrec{ color:var(--gold) !important; animation:pulse 0.8s infinite; }
+  .hint-small{ font-size:11px; color:#c9b8e0; margin-top:18px; opacity:.8; }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="scene"></canvas>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="hud-box">
+    <div class="hud-label">DISTANCE</div>
+    <div class="hud-val" id="scoreVal">0</div>
+  </div>
+  <div class="hud-box" style="border-color:var(--gold); box-shadow:4px 4px 0 var(--magenta);">
+    <div class="hud-label" style="color:var(--gold)">COINS</div>
+    <div class="hud-val" id="coinVal">0</div>
+  </div>
+</div>
+<div id="muteBtn">♪</div>
+
+<!-- 开始遮罩 -->
+<div class="overlay" id="startOverlay">
+  <div class="title">NEON<br/>RUNNER</div>
+  <div class="subtitle">SYNTHWAVE ENDLESS RUN</div>
+  <div class="howto">
+    <b>← →</b> / <b>A D</b> / 左右滑 = 换道<br/>
+    <b>↑ W Space</b> / 上滑 = 跳跃<br/>
+    <b>↓ S</b> / 下滑 = 滑铲<br/>
+    跳过矮栏 · 滑铲钻过悬障 · 换道躲路障<br/>
+    沿途吃 <b style="color:var(--gold)">金币</b> 加分,速度越来越快!
+  </div>
+  <div class="btn pulse" id="startBtn">▶ 点击开始</div>
+  <div class="hint-small" id="bestStart">最高分: 0</div>
+</div>
+
+<!-- 结束遮罩 -->
+<div class="overlay hidden" id="overOverlay">
+  <div class="title" style="color:var(--pink); text-shadow:0 0 12px var(--pink), 4px 4px 0 var(--cyan);">GAME<br/>OVER</div>
+  <div id="finalScore">SCORE 0</div>
+  <div id="finalBest">BEST 0</div>
+  <div class="btn pulse" id="restartBtn">↻ 再来一局</div>
+</div>
+
+<div id="flash"></div>
+<div id="crt"></div>
+
+<!-- Three.js importmap -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =========================================================
+   NEON RUNNER —— 3D 无尽跑酷 (Three.js + 合成波风格)
+   世界朝镜头滚动,角色在 3 条车道间换道/跳跃/滑铲
+   ========================================================= */
+
+// ---------- 基础常量 ----------
+const LANE_X = [-3.0, 0, 3.0];      // 三条车道的 X 坐标
+const LANE_COUNT = 3;
+const SPAWN_Z = -160;               // 障碍/金币生成处(远端)
+const DESPAWN_Z = 16;               // 越过镜头后回收处
+const GRAVITY = -55;                // 重力加速度
+const JUMP_V = 18;                  // 跳跃初速度
+const SLIDE_TIME = 0.62;            // 滑铲持续时间(秒)
+const NEON = {
+  pink:0xff2e88, cyan:0x5ef0ff, magenta:0xff5ec8, gold:0xffd95e, green:0x5effa0
+};
+
+// ---------- 全局状态 ----------
+const game = {
+  running:false, over:false,
+  speed:34, baseSpeed:34, maxSpeed:95,
+  distance:0, coins:0, score:0,
+  best: parseInt(localStorage.getItem('neonRunnerBest')||'0',10),
+  lane:1,                 // 当前目标车道(0~2)
+  laneX:0,                // 当前实际插值 X
+  jumping:false, vy:0, y:0,
+  sliding:false, slideT:0,
+  runPhase:0,             // 腿部摆动相位
+  shake:0,                // 屏幕抖动量
+  spawnTimer:0,
+};
+
+// ---------- DOM ----------
+const canvas    = document.getElementById('scene');
+const scoreVal  = document.getElementById('scoreVal');
+const coinVal   = document.getElementById('coinVal');
+const startOv   = document.getElementById('startOverlay');
+const overOv    = document.getElementById('overOverlay');
+const startBtn  = document.getElementById('startBtn');
+const restartBtn= document.getElementById('restartBtn');
+const finalScore= document.getElementById('finalScore');
+const finalBest = document.getElementById('finalBest');
+const bestStart = document.getElementById('bestStart');
+const muteBtn   = document.getElementById('muteBtn');
+const flashEl   = document.getElementById('flash');
+
+bestStart.textContent = '最高分: ' + game.best;
+
+// =========================================================
+//  Three.js 场景搭建
+// =========================================================
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+scene.background = null; // 用 CSS 渐变作天空
+scene.fog = new THREE.Fog(0x2a0f44, 40, 150); // 远端雾化融入背景
+
+const camera = new THREE.PerspectiveCamera(62, window.innerWidth/window.innerHeight, 0.1, 400);
+camera.position.set(0, 6.2, 11);
+camera.lookAt(0, 2.2, -24);
+
+// ---------- 灯光 ----------
+scene.add(new THREE.AmbientLight(0xff66cc, 0.55));
+const dir = new THREE.DirectionalLight(0x88ddff, 0.9);
+dir.position.set(-6, 14, 8);
+scene.add(dir);
+const fillPink = new THREE.PointLight(0xff2e88, 1.2, 60);
+fillPink.position.set(0, 6, 6);
+scene.add(fillPink);
+
+// =========================================================
+//  跑道:霓虹网格地面 + 两侧发光边线
+// =========================================================
+const ROAD_W = 11;
+// 用 Canvas 现画网格纹理
+function makeGridTexture(){
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#140832'; x.fillRect(0,0,256,256);
+  x.strokeStyle = 'rgba(94,240,255,0.9)';
+  x.lineWidth = 4;
+  // 横线
+  for(let i=0;i<=8;i++){
+    const p = i*32;
+    x.beginPath(); x.moveTo(0,p); x.lineTo(256,p); x.stroke();
+  }
+  // 竖线(车道分隔)
+  x.strokeStyle = 'rgba(255,46,136,0.55)';
+  for(let i=0;i<=3;i++){
+    const p = i*(256/3);
+    x.beginPath(); x.moveTo(p,0); x.lineTo(p,256); x.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1, 40);
+  return t;
+}
+const gridTex = makeGridTexture();
+const roadGeo = new THREE.PlaneGeometry(ROAD_W, 400);
+const roadMat = new THREE.MeshBasicMaterial({ map:gridTex });
+const road = new THREE.Mesh(roadGeo, roadMat);
+road.rotation.x = -Math.PI/2;
+road.position.set(0, 0, -180);
+scene.add(road);
+
+// 两侧发光边线(用细长发光盒)
+function makeEdgeLine(xSign){
+  const geo = new THREE.BoxGeometry(0.25, 0.35, 400);
+  const mat = new THREE.MeshBasicMaterial({ color:NEON.cyan });
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(xSign*(ROAD_W/2), 0.18, -180);
+  scene.add(m);
+  // 辉光:稍大的半透明壳
+  const glow = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.7, 400),
+    new THREE.MeshBasicMaterial({ color:NEON.cyan, transparent:true, opacity:0.25 })
+  );
+  glow.position.copy(m.position);
+  scene.add(glow);
+  return m;
+}
+makeEdgeLine(-1); makeEdgeLine(1);
+
+// 远端霓虹"太阳"光柱效果(几个发光环柱),纯装饰,随路滚动
+const pillars = [];
+function makePillar(z, side){
+  const g = new THREE.Group();
+  const col = (Math.random()>0.5)?NEON.pink:NEON.magenta;
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18,0.18,9,8),
+    new THREE.MeshBasicMaterial({ color:col })
+  );
+  post.position.y = 4.5;
+  g.add(post);
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.4,0.12,8,20),
+    new THREE.MeshBasicMaterial({ color:NEON.cyan })
+  );
+  ring.position.y = 8.6;
+  g.add(ring);
+  g.position.set(side*(ROAD_W/2 + 4.5), 0, z);
+  scene.add(g);
+  pillars.push(g);
+}
+for(let i=0;i<14;i++){
+  makePillar(-i*22 - 10, (i%2===0)?-1:1);
+}
+
+// =========================================================
+//  角色:霓虹机器人小人(若干 box 拼成,带辉光描边)
+// =========================================================
+const player = new THREE.Group();
+scene.add(player);
+
+function neonBox(w,h,d, color, glow=true){
+  const grp = new THREE.Group();
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(w,h,d),
+    new THREE.MeshStandardMaterial({
+      color:color, emissive:color, emissiveIntensity:0.7,
+      metalness:0.4, roughness:0.3
+    })
+  );
+  grp.add(mesh);
+  // 描边:稍大的 BackSide 黑壳
+  const outline = new THREE.Mesh(
+    new THREE.BoxGeometry(w+0.12,h+0.12,d+0.12),
+    new THREE.MeshBasicMaterial({ color:0x0a0020, side:THREE.BackSide })
+  );
+  grp.add(outline);
+  grp.userData.mesh = mesh;
+  return grp;
+}
+
+// 身体部件
+const torso = neonBox(1.0, 1.2, 0.6, NEON.cyan);
+torso.position.y = 1.6;
+player.add(torso);
+
+const head = neonBox(0.7, 0.7, 0.7, NEON.pink);
+head.position.y = 2.65;
+player.add(head);
+// 眼睛(青色发光条)
+const eye = new THREE.Mesh(
+  new THREE.BoxGeometry(0.5, 0.12, 0.05),
+  new THREE.MeshBasicMaterial({ color:NEON.cyan })
+);
+eye.position.set(0, 2.7, 0.38);
+player.add(eye);
+
+const armL = neonBox(0.28, 1.0, 0.28, NEON.magenta);
+const armR = neonBox(0.28, 1.0, 0.28, NEON.magenta);
+armL.position.set(-0.72, 1.55, 0);
+armR.position.set( 0.72, 1.55, 0);
+player.add(armL); player.add(armR);
+
+const legL = neonBox(0.34, 1.0, 0.34, NEON.gold);
+const legR = neonBox(0.34, 1.0, 0.34, NEON.gold);
+legL.position.set(-0.28, 0.55, 0);
+legR.position.set( 0.28, 0.55, 0);
+player.add(legL); player.add(legR);
+
+// 角色辉光点光源,跟随角色
+const playerGlow = new THREE.PointLight(NEON.cyan, 1.4, 12);
+playerGlow.position.set(0, 2, 0);
+player.add(playerGlow);
+
+player.position.set(0, 0, 4); // 角色在镜头前方一点
+
+// 角色 AABB(随状态调整高度)
+const playerBox = new THREE.Box3();
+function updatePlayerBox(){
+  // 站立: 高约 3; 滑铲: 压扁约 1.4
+  const half = game.sliding ? 0.55 : 0.45;
+  const top  = game.sliding ? 1.4 : 3.0;
+  const cx = game.laneX;
+  const cy = game.y;
+  playerBox.min.set(cx-half, cy+0.1, player.position.z-0.45);
+  playerBox.max.set(cx+half, cy+top, player.position.z+0.45);
+}
+
+// =========================================================
+//  障碍物 & 金币 对象池
+// =========================================================
+const obstacles = []; // {mesh, type, box, lane}
+const coins = [];     // {mesh, box, spin}
+
+// 障碍材质生成
+function makeObstacle(type, lane, z){
+  let mesh, color;
+  // hitY: 该障碍真正的碰撞 y 区间(局部坐标)。支柱仅作装饰,不参与碰撞,
+  // 否则 high 障碍的落地支柱会让滑铲无法钻过、low 障碍无法跳过。
+  let hitMinY, hitMaxY;
+  if(type==='low'){          // 矮栏:需跳过
+    color = NEON.pink;
+    mesh = new THREE.Group();
+    const bar = neonBox(2.2, 0.9, 0.5, color);
+    bar.position.y = 0.55;
+    mesh.add(bar);
+    // 两根支柱(装饰)
+    const p1 = neonBox(0.18,0.9,0.18, NEON.gold); p1.position.set(-0.9,0.45,0);
+    const p2 = neonBox(0.18,0.9,0.18, NEON.gold); p2.position.set( 0.9,0.45,0);
+    mesh.add(p1); mesh.add(p2);
+    hitMinY = 0.0; hitMaxY = 1.0;   // 跳跃可越过
+  } else if(type==='high'){  // 高悬障碍:需滑铲钻过
+    color = NEON.magenta;
+    mesh = new THREE.Group();
+    const bar = neonBox(2.4, 1.1, 0.5, color);
+    bar.position.y = 2.5;
+    mesh.add(bar);
+    const p1 = neonBox(0.18,3.0,0.18, NEON.cyan); p1.position.set(-1.0,1.5,0);
+    const p2 = neonBox(0.18,3.0,0.18, NEON.cyan); p2.position.set( 1.0,1.5,0);
+    mesh.add(p1); mesh.add(p2);
+    hitMinY = 1.9; hitMaxY = 3.2;   // 仅横杆参与碰撞,滑铲可钻过
+  } else {                   // block:整块路障,需换道
+    color = NEON.cyan;
+    mesh = new THREE.Group();
+    const b = neonBox(2.3, 2.6, 1.0, color);
+    b.position.y = 1.3;
+    mesh.add(b);
+    hitMinY = 0.0; hitMaxY = 2.6;   // 无法跳/滑越过,只能换道
+  }
+  mesh.position.set(LANE_X[lane], 0, z);
+  scene.add(mesh);
+  // 预存局部碰撞半宽/高度区间,每帧据 mesh.position 重建世界 box(不含装饰支柱)
+  const o = { mesh, type, lane, box:new THREE.Box3(), halfX:1.15, hitMinY, hitMaxY };
+  obstacles.push(o);
+  return o;
+}
+
+// 金币
+function makeCoin(lane, z, yOff){
+  const geo = new THREE.CylinderGeometry(0.45,0.45,0.12,16);
+  const mat = new THREE.MeshStandardMaterial({
+    color:NEON.gold, emissive:NEON.gold, emissiveIntensity:0.9,
+    metalness:0.8, roughness:0.2
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.rotation.z = Math.PI/2; // 立起来像硬币
+  mesh.position.set(LANE_X[lane], yOff, z);
+  scene.add(mesh);
+  const c = { mesh, box:new THREE.Box3(), got:false };
+  coins.push(c);
+  return c;
+}
+
+// 生成一组(障碍/金币)的图样
+function spawnPattern(){
+  const z = SPAWN_Z;
+  const r = Math.random();
+  if(r < 0.55){
+    // 单个障碍 + 旁边一排金币
+    const lane = Math.floor(Math.random()*LANE_COUNT);
+    const types = ['low','high','block'];
+    const type = types[Math.floor(Math.random()*types.length)];
+    makeObstacle(type, lane, z);
+    // 金币放在其它车道
+    let cl = (lane + 1 + Math.floor(Math.random()*2)) % LANE_COUNT;
+    for(let i=0;i<5;i++) makeCoin(cl, z + i*4, 1.2);
+  } else if(r < 0.8){
+    // 两个障碍(留一条路) + 中间金币
+    const open = Math.floor(Math.random()*LANE_COUNT);
+    const types = ['low','high','block'];
+    for(let l=0;l<LANE_COUNT;l++){
+      if(l===open) continue;
+      makeObstacle(types[Math.floor(Math.random()*types.length)], l, z);
+    }
+    for(let i=0;i<4;i++) makeCoin(open, z + i*4, 1.2);
+  } else {
+    // 纯金币弧线(跨车道)
+    const lane = Math.floor(Math.random()*LANE_COUNT);
+    for(let i=0;i<6;i++){
+      makeCoin(lane, z + i*3.5, 1.2 + Math.sin(i*0.6)*0.8);
+    }
+  }
+}
+
+// 回收 + 重置
+function clearWorld(){
+  for(const o of obstacles) scene.remove(o.mesh);
+  for(const c of coins) scene.remove(c.mesh);
+  obstacles.length = 0; coins.length = 0;
+}
+
+// =========================================================
+//  音频:Web Audio 程序化音效 + 合成波循环配乐
+// =========================================================
+let audioCtx = null, masterGain = null, musicGain = null, muted = false;
+let musicTimer = null, musicStep = 0;
+
+function initAudio(){
+  if(audioCtx) return;
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.6;
+  masterGain.connect(audioCtx.destination);
+  musicGain = audioCtx.createGain();
+  musicGain.gain.value = 0.18;
+  musicGain.connect(masterGain);
+}
+
+// 程序化音效:跳/滑/金币/撞击
+function sfx(type){
+  if(!audioCtx || muted) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(masterGain);
+  if(type==='jump'){
+    o.type='square'; o.frequency.setValueAtTime(330,t);
+    o.frequency.exponentialRampToValueAtTime(720,t+0.18);
+    g.gain.setValueAtTime(0.25,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.2);
+    o.start(t); o.stop(t+0.22);
+  } else if(type==='slide'){
+    o.type='sawtooth'; o.frequency.setValueAtTime(500,t);
+    o.frequency.exponentialRampToValueAtTime(120,t+0.25);
+    g.gain.setValueAtTime(0.2,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.26);
+    o.start(t); o.stop(t+0.28);
+  } else if(type==='coin'){
+    o.type='triangle'; o.frequency.setValueAtTime(880,t);
+    o.frequency.setValueAtTime(1320,t+0.06);
+    g.gain.setValueAtTime(0.22,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.16);
+    o.start(t); o.stop(t+0.18);
+  } else if(type==='lane'){
+    o.type='square'; o.frequency.setValueAtTime(600,t);
+    o.frequency.exponentialRampToValueAtTime(440,t+0.08);
+    g.gain.setValueAtTime(0.12,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.1);
+    o.start(t); o.stop(t+0.11);
+  } else if(type==='crash'){
+    // 噪声爆破
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*0.5, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
+    const ns = audioCtx.createBufferSource(); ns.buffer=buf;
+    const ng = audioCtx.createGain(); ng.gain.value=0.5;
+    ns.connect(ng); ng.connect(masterGain); ns.start(t);
+    o.type='sawtooth'; o.frequency.setValueAtTime(220,t);
+    o.frequency.exponentialRampToValueAtTime(40,t+0.5);
+    g.gain.setValueAtTime(0.4,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+    o.start(t); o.stop(t+0.5);
+  }
+}
+
+// 合成波循环配乐:简单的 bass 琶音 + pad
+const BASS = [55, 55, 82.4, 73.4]; // A1 A1 E2 D2 风格低音
+const ARP  = [220, 277, 330, 415]; // A C# E G# 琶音
+function startMusic(){
+  if(!audioCtx || musicTimer) return;
+  musicStep = 0;
+  const stepDur = 0.22; // 每步时长
+  musicTimer = setInterval(()=>{
+    if(muted) return;
+    const t = audioCtx.currentTime;
+    // 低音
+    const bo = audioCtx.createOscillator(); const bg = audioCtx.createGain();
+    bo.type='sawtooth';
+    bo.frequency.value = BASS[Math.floor(musicStep/4)%BASS.length];
+    bg.gain.setValueAtTime(0.0,t); bg.gain.linearRampToValueAtTime(0.12,t+0.02);
+    bg.gain.exponentialRampToValueAtTime(0.001,t+stepDur*0.9);
+    bo.connect(bg); bg.connect(musicGain); bo.start(t); bo.stop(t+stepDur);
+    // 琶音
+    const ao = audioCtx.createOscillator(); const ag = audioCtx.createGain();
+    ao.type='square';
+    ao.frequency.value = ARP[musicStep%ARP.length] * 2;
+    ag.gain.setValueAtTime(0.0,t); ag.gain.linearRampToValueAtTime(0.06,t+0.01);
+    ag.gain.exponentialRampToValueAtTime(0.001,t+stepDur*0.7);
+    ao.connect(ag); ag.connect(musicGain); ao.start(t); ao.stop(t+stepDur);
+    musicStep++;
+  }, 220);
+}
+function stopMusic(){
+  if(musicTimer){ clearInterval(musicTimer); musicTimer=null; }
+}
+
+muteBtn.addEventListener('click', ()=>{
+  muted = !muted;
+  muteBtn.textContent = muted ? '🔇' : '♪';
+  if(masterGain) masterGain.gain.value = muted ? 0 : 0.6;
+});
+
+// =========================================================
+//  输入控制(键盘 + 触屏滑动/点击)
+// =========================================================
+function moveLane(dir){
+  if(!game.running || game.over) return;
+  const nl = Math.max(0, Math.min(LANE_COUNT-1, game.lane + dir));
+  if(nl !== game.lane){ game.lane = nl; sfx('lane'); }
+}
+function doJump(){
+  if(!game.running || game.over) return;
+  if(!game.jumping && !game.sliding){
+    game.jumping = true; game.vy = JUMP_V; sfx('jump');
+  }
+}
+function doSlide(){
+  if(!game.running || game.over) return;
+  if(!game.sliding && !game.jumping){
+    game.sliding = true; game.slideT = SLIDE_TIME; sfx('slide');
+  } else if(game.jumping){
+    // 空中下滑:快速落地
+    game.vy = -30;
+  }
+}
+
+window.addEventListener('keydown', (e)=>{
+  switch(e.code){
+    case 'ArrowLeft': case 'KeyA': moveLane(-1); e.preventDefault(); break;
+    case 'ArrowRight': case 'KeyD': moveLane(1); e.preventDefault(); break;
+    case 'ArrowUp': case 'KeyW': case 'Space': doJump(); e.preventDefault(); break;
+    case 'ArrowDown': case 'KeyS': doSlide(); e.preventDefault(); break;
+  }
+});
+
+// 触屏:滑动判定 + 点击左右半屏
+let touchStart = null;
+canvas.addEventListener('touchstart', (e)=>{
+  const t = e.changedTouches[0];
+  touchStart = { x:t.clientX, y:t.clientY, time:Date.now() };
+}, {passive:true});
+canvas.addEventListener('touchend', (e)=>{
+  if(!touchStart) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStart.x;
+  const dy = t.clientY - touchStart.y;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
+  const dt = Date.now() - touchStart.time;
+  if(adx < 24 && ady < 24 && dt < 250){
+    // 点击:左右半屏换道
+    if(t.clientX < window.innerWidth/2) moveLane(-1);
+    else moveLane(1);
+  } else if(adx > ady){
+    moveLane(dx>0 ? 1 : -1);
+  } else {
+    if(dy < 0) doJump(); else doSlide();
+  }
+  touchStart = null;
+}, {passive:true});
+
+// =========================================================
+//  游戏流程控制
+// =========================================================
+function startGame(){
+  initAudio();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  startMusic();
+  // 重置状态
+  clearWorld();
+  game.running = true; game.over = false;
+  game.speed = game.baseSpeed;
+  game.distance = 0; game.coins = 0; game.score = 0;
+  game.lane = 1; game.laneX = 0;
+  game.jumping=false; game.vy=0; game.y=0;
+  game.sliding=false; game.slideT=0;
+  game.spawnTimer = 0; game.shake = 0;
+  game.runPhase = 0;
+  // 复位角色视觉状态(避免上一局滑铲压扁残留)
+  player.position.set(0, 0, 4);
+  player.scale.set(1, 1, 1);
+  player.rotation.x = 0;
+  scoreVal.textContent = '0';
+  coinVal.textContent = '0';
+  startOv.classList.add('hidden');
+  overOv.classList.add('hidden');
+}
+
+function endGame(){
+  if(game.over) return;
+  game.over = true; game.running = false;
+  sfx('crash');
+  stopMusic();
+  // 顿帧 + 红闪 + 抖动
+  game.shake = 1.4;
+  flashEl.style.background = 'radial-gradient(circle at center, rgba(255,46,136,.65), rgba(255,46,136,.25))';
+  flashEl.style.opacity = '1';
+  setTimeout(()=>{ flashEl.style.opacity='0'; }, 180);
+
+  game.score = Math.floor(game.distance) + game.coins*10;
+  let isNew = false;
+  if(game.score > game.best){
+    game.best = game.score; isNew = true;
+    localStorage.setItem('neonRunnerBest', String(game.best));
+  }
+  finalScore.textContent = 'SCORE ' + game.score;
+  finalBest.textContent = 'BEST ' + game.best;
+  finalBest.classList.toggle('newrec', isNew);
+  if(isNew) finalBest.textContent = '★ NEW BEST ' + game.best + ' ★';
+  bestStart.textContent = '最高分: ' + game.best;
+  // 略微延迟显示遮罩(顿帧感)
+  setTimeout(()=> overOv.classList.remove('hidden'), 420);
+}
+
+startBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', startGame);
+
+// =========================================================
+//  主循环(requestAnimationFrame + delta time)
+// =========================================================
+const clock = new THREE.Clock();
+
+function update(dt){
+  if(!game.running) return;
+
+  // 速度随时间递增
+  game.speed = Math.min(game.maxSpeed, game.speed + dt*1.6);
+  const move = game.speed * dt;
+  game.distance += move;
+
+  // ---- 换道横向插值(跟手) ----
+  const targetX = LANE_X[game.lane];
+  game.laneX += (targetX - game.laneX) * Math.min(1, dt*16);
+
+  // ---- 跳跃物理 ----
+  if(game.jumping){
+    game.vy += GRAVITY * dt;
+    game.y  += game.vy * dt;
+    if(game.y <= 0){ game.y = 0; game.jumping=false; game.vy=0; }
+  }
+
+  // ---- 滑铲计时 ----
+  if(game.sliding){
+    game.slideT -= dt;
+    if(game.slideT <= 0) game.sliding = false;
+  }
+
+  // ---- 应用角色变换 + 跑动动画 ----
+  player.position.x = game.laneX;
+  player.position.y = game.y;
+  game.runPhase += dt * (8 + game.speed*0.18);
+  const swing = Math.sin(game.runPhase) * 0.6;
+  legL.rotation.x =  swing; legL.position.z =  Math.sin(game.runPhase)*0.25;
+  legR.rotation.x = -swing; legR.position.z = -Math.sin(game.runPhase)*0.25;
+  armL.rotation.x = -swing*0.8; armR.rotation.x = swing*0.8;
+
+  // 滑铲压扁
+  if(game.sliding){
+    player.scale.set(1.15, 0.42, 1.15);
+    player.rotation.x = -0.5;
+  } else {
+    player.scale.x += (1-player.scale.x)*Math.min(1,dt*18);
+    player.scale.y += (1-player.scale.y)*Math.min(1,dt*18);
+    player.scale.z += (1-player.scale.z)*Math.min(1,dt*18);
+    player.rotation.x += (0-player.rotation.x)*Math.min(1,dt*18);
+  }
+  // 角色辉光颜色随跑动微微脉动
+  playerGlow.intensity = 1.2 + Math.sin(game.runPhase*0.5)*0.3;
+
+  // ---- 网格纹理滚动(地面流动感) ----
+  gridTex.offset.y -= move * 0.025;
+
+  // ---- 装饰光柱滚动回收 ----
+  for(const p of pillars){
+    p.position.z += move;
+    if(p.position.z > 16){ p.position.z -= 14*22; }
+  }
+
+  // ---- 生成障碍 ----
+  game.spawnTimer -= move;
+  if(game.spawnTimer <= 0){
+    spawnPattern();
+    // 随速度收紧生成间隔
+    const gap = Math.max(20, 42 - game.speed*0.18);
+    game.spawnTimer = gap;
+  }
+
+  // ---- 更新玩家 AABB ----
+  updatePlayerBox();
+
+  // ---- 障碍移动 + 碰撞 ----
+  // 防穿透:碰撞 z 窗口随单帧位移(move)放宽,高速时也不会"跳过"障碍
+  const zWin = 1.2 + move;
+  for(let i=obstacles.length-1;i>=0;i--){
+    const o = obstacles[i];
+    o.mesh.position.z += move;
+    // 仅用障碍的有效碰撞体(横杆/块),不含落地装饰支柱
+    const ox = o.mesh.position.x, oz = o.mesh.position.z;
+    o.box.min.set(ox - o.halfX, o.hitMinY, oz - 0.5);
+    o.box.max.set(ox + o.halfX, o.hitMaxY, oz + 0.5);
+    // 碰撞判定(只在接近镜头区间)
+    if(Math.abs(oz - player.position.z) < zWin){
+      if(o.box.intersectsBox(playerBox)){
+        endGame(); return;
+      }
+    }
+    if(oz > DESPAWN_Z){
+      scene.remove(o.mesh); obstacles.splice(i,1);
+    }
+  }
+
+  // ---- 金币移动 + 吃币 ----
+  for(let i=coins.length-1;i>=0;i--){
+    const c = coins[i];
+    c.mesh.position.z += move;
+    c.mesh.rotation.x += dt*6; // 旋转
+    if(!c.got){
+      c.box.setFromObject(c.mesh);
+      if(Math.abs(c.mesh.position.z - player.position.z) < 1.5 + move &&
+         c.box.intersectsBox(playerBox)){
+        c.got = true;
+        game.coins++;
+        coinVal.textContent = game.coins;
+        sfx('coin');
+        // juice:金币弹起消失
+        scene.remove(c.mesh); coins.splice(i,1);
+        continue;
+      }
+    }
+    if(c.mesh.position.z > DESPAWN_Z){
+      scene.remove(c.mesh); coins.splice(i,1);
+    }
+  }
+
+  // ---- 更新分数 HUD ----
+  scoreVal.textContent = Math.floor(game.distance);
+}
+
+// 渲染(含屏幕抖动)
+function render(){
+  // 抖动衰减
+  if(game.shake > 0.001){
+    game.shake *= 0.88;
+    camera.position.x = (Math.random()-0.5) * game.shake;
+    camera.position.y = 6.2 + (Math.random()-0.5) * game.shake;
+  } else {
+    camera.position.x += (0-camera.position.x)*0.2;
+    camera.position.y += (6.2-camera.position.y)*0.2;
+  }
+  renderer.render(scene, camera);
+}
+
+function loop(){
+  requestAnimationFrame(loop);
+  let dt = clock.getDelta();
+  if(dt > 0.05) dt = 0.05; // 防止卡顿后大跳
+  update(dt);
+  render();
+}
+loop();
+
+// =========================================================
+//  自动演示 + 自录画面 (?demo / ?record=N)
+// =========================================================
+const _params = new URLSearchParams(location.search);
+const _isDemo   = _params.has('demo') || _params.has('record');
+const _recordSec= _params.has('record') ? Math.max(1, parseInt(_params.get('record')||'0',10)||0) : 0;
+
+// ---- 简易但"打得不错"的 AI ----
+// 思路:把世界投影到"距离玩家的 z 深度"上,
+//   - 对最近的障碍:判断当前车道是否危险;若危险则评估每条候选车道未来一小段路的安全性,选最安全的车道换过去;
+//   - 矮栏(low):跳;悬障(high):滑铲;整块(block):必须换道;
+//   - 无威胁时,优先朝"附近有金币且安全"的车道靠拢顺路吃币;
+//   - 跳/滑有冷却,避免抖动。
+const ai = { jumpCd:0, slideCd:0, laneCd:0 };
+
+// 评估某条车道在 [zNear, zFar] 段内是否有"无法靠跳/滑通过"的硬阻挡(block 或正撞上的横杆)
+function aiLaneHardBlocked(lane, zNear, zFar){
+  for(const o of obstacles){
+    if(o.lane !== lane) continue;
+    const oz = o.mesh.position.z;
+    if(oz < zNear || oz > zFar) continue;
+    if(o.type === 'block') return true; // 只能换道
+  }
+  return false;
+}
+// 该车道最近的障碍(z 最小即最远但仍在前方的优先用最接近玩家的)
+function aiNearestObstacle(lane){
+  let best = null;
+  for(const o of obstacles){
+    if(o.lane !== lane) continue;
+    const oz = o.mesh.position.z;
+    if(oz > player.position.z + 1.5) continue;      // 已越过
+    if(!best || oz > best.mesh.position.z) best = o; // 取最接近玩家(z 最大)的
+  }
+  return best;
+}
+function aiLaneCoinCount(lane){
+  let n = 0;
+  for(const c of coins){
+    if(c.got) continue;
+    if(Math.abs(c.mesh.position.x - LANE_X[lane]) > 1.0) continue;
+    const dz = player.position.z - c.mesh.position.z;
+    if(dz > 0 || dz < -70) continue; // 仅看前方一段
+    n++;
+  }
+  return n;
+}
+
+function aiTick(dt){
+  if(!game.running || game.over) return;
+  ai.jumpCd  = Math.max(0, ai.jumpCd  - dt);
+  ai.slideCd = Math.max(0, ai.slideCd - dt);
+  ai.laneCd  = Math.max(0, ai.laneCd  - dt);
+
+  const cur = game.lane;
+  const near = aiNearestObstacle(cur);
+
+  if(near){
+    const dz = player.position.z - near.mesh.position.z; // 距离玩家还有多远(正数=在前方)
+    // 反应距离:速度越快越早动作
+    const react = 9 + game.speed * 0.16;
+    if(dz > 0 && dz < react){
+      if(near.type === 'low'){
+        // 跳过矮栏;太近且已可越过则跳
+        if(ai.jumpCd<=0 && !game.jumping && !game.sliding && dz < react*0.82){
+          doJump(); ai.jumpCd = 0.45;
+        }
+        return;
+      } else if(near.type === 'high'){
+        // 滑铲钻过悬障
+        if(ai.slideCd<=0 && !game.sliding && !game.jumping && dz < react*0.7){
+          doSlide(); ai.slideCd = 0.45;
+        }
+        return;
+      } else {
+        // block:必须换道。评估相邻车道安全性
+        if(ai.laneCd<=0){
+          const zNear = player.position.z - (react+8);
+          const zFar  = player.position.z + 2;
+          const cands = [];
+          for(const nl of [cur-1, cur+1]){
+            if(nl<0 || nl>=LANE_COUNT) continue;
+            if(aiLaneHardBlocked(nl, zNear, zFar)) continue;
+            // 该相邻车道近处有可跳/滑的障碍也行,但优先选完全空的
+            const nb = aiNearestObstacle(nl);
+            let risk = 0;
+            if(nb){
+              const ndz = player.position.z - nb.mesh.position.z;
+              if(ndz > 0 && ndz < react*0.9) risk = (nb.type==='block') ? 100 : 2;
+            }
+            cands.push({ lane:nl, risk, coins:aiLaneCoinCount(nl) });
+          }
+          if(cands.length){
+            cands.sort((a,b)=> (a.risk-b.risk) || (b.coins-a.coins));
+            const pick = cands[0];
+            moveLane(pick.lane > cur ? 1 : -1);
+            ai.laneCd = 0.25;
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  // 无即时威胁:顺路吃金币 —— 朝相邻"更多金币且安全"的车道靠拢
+  if(ai.laneCd<=0 && !game.jumping && !game.sliding){
+    const react = 9 + game.speed * 0.16;
+    const zNear = player.position.z - (react+6);
+    const zFar  = player.position.z + 2;
+    const curCoins = aiLaneCoinCount(cur);
+    let bestLane = cur, bestCoins = curCoins;
+    for(const nl of [cur-1, cur+1]){
+      if(nl<0 || nl>=LANE_COUNT) continue;
+      if(aiLaneHardBlocked(nl, zNear, zFar)) continue;
+      const nb = aiNearestObstacle(nl);
+      if(nb){
+        const ndz = player.position.z - nb.mesh.position.z;
+        if(ndz > 0 && ndz < react) continue; // 该道前方有障碍,别贪
+      }
+      const cc = aiLaneCoinCount(nl);
+      if(cc > bestCoins + 1){ bestCoins = cc; bestLane = nl; }
+    }
+    if(bestLane !== cur){
+      moveLane(bestLane > cur ? 1 : -1);
+      ai.laneCd = 0.3;
+    }
+  }
+}
+
+// 将 AI 接入:用独立 rAF 与渲染同节奏驱动决策,不改动原 loop 结构。
+// aiTick 内部带冷却且自判 running,幂等安全。
+(function(){
+  if(!_isDemo) return;
+  let _last = performance.now();
+  function aiDriver(now){
+    requestAnimationFrame(aiDriver);
+    let d = (now - _last) / 1000; _last = now;
+    if(d > 0.05) d = 0.05;
+    aiTick(d);
+  }
+  requestAnimationFrame(aiDriver);
+})();
+
+// ---- 自动开局 + 录制 ----
+function autoDemoStart(){
+  // 绕过开始遮罩,直接调用开局函数
+  startGame();
+}
+
+if(_isDemo){
+  // 等场景/字体就绪后开局
+  window.addEventListener('load', ()=>{
+    setTimeout(()=>{
+      autoDemoStart();
+      if(_recordSec > 0) startRecording(_recordSec);
+    }, 400);
+  });
+  // 若 load 已触发(脚本较晚执行),兜底再来一次
+  if(document.readyState === 'complete'){
+    setTimeout(()=>{
+      if(!game.running && !game.over){ autoDemoStart(); if(_recordSec>0) startRecording(_recordSec); }
+    }, 500);
+  }
+}
+
+function startRecording(sec){
+  try{
+    const cv = renderer.domElement;              // 游戏主 canvas (Three.js)
+    const stream = cv.captureStream(30);
+    let mt = 'video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mt)) mt = 'video/webm';
+    const mr = new MediaRecorder(stream, { mimeType:mt, videoBitsPerSecond:9000000 });
+    const chunks = [];
+    mr.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+    mr.onstop = ()=>{
+      const blob = new Blob(chunks, { type:'video/webm' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'neon-runner.webm';
+      document.body.appendChild(a);
+      try{ a.click(); }catch(e){}
+    };
+    mr.start();
+    setTimeout(()=> { try{ mr.stop(); }catch(e){} }, sec*1000);
+  }catch(err){
+    console.warn('录制失败:', err);
+  }
+}
+
+// =========================================================
+//  自适应 resize
+// =========================================================
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// 阻止移动端双指缩放/滚动
+document.addEventListener('gesturestart', e=>e.preventDefault());
+document.addEventListener('touchmove', e=>{ if(e.touches.length>1) e.preventDefault(); }, {passive:false});
+
+</script>
+</body>
+</html>

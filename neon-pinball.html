@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON PINBALL · 霓虹弹球</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 合成波 OutRun 全局风格 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8; --gold:#ffd95e; --green:#5effa0;
+    --ink:#160a36;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; overflow:hidden;}
+  body{
+    background:linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+    font-family:'Chakra Petch',system-ui,'Microsoft YaHei',sans-serif;
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    -webkit-tap-highlight-color:transparent; touch-action:none;
+  }
+  /* 游戏容器 */
+  #wrap{ position:relative; height:100vh; aspect-ratio:9/16; max-width:100vw; }
+  @media (min-aspect-ratio:9/16){ #wrap{ height:100vh; width:auto; } }
+  canvas{ display:block; width:100%; height:100%; image-rendering:auto;
+    box-shadow:0 0 0 3px var(--cyan), 0 0 24px rgba(94,240,255,.5), 8px 8px 0 var(--pink);
+    background:#0a0420; }
+  /* 极轻 CRT 扫描线 */
+  #crt{ position:fixed; inset:0; pointer-events:none; z-index:50;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.10),rgba(0,0,0,.10) 1px,transparent 1px,transparent 3px);
+    mix-blend-mode:multiply; opacity:.45; }
+  /* HUD */
+  #mute{ position:fixed; top:10px; right:10px; z-index:60;
+    font-family:'Press Start 2P'; font-size:11px; color:var(--ink);
+    background:var(--gold); border:none; padding:8px 10px; cursor:pointer;
+    box-shadow:3px 3px 0 var(--pink); }
+  #mute:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--pink); }
+  /* 遮罩 */
+  .overlay{ position:absolute; inset:0; z-index:40; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; padding:24px;
+    background:radial-gradient(ellipse at 50% 35%,rgba(36,10,70,.78),rgba(8,3,24,.92));
+    backdrop-filter:blur(2px); }
+  .overlay.hidden{ display:none; }
+  .title{ font-family:'Press Start 2P'; font-size:clamp(18px,5vw,34px); line-height:1.5;
+    color:var(--cyan); text-shadow:3px 3px 0 var(--pink),0 0 18px var(--cyan); margin-bottom:10px; }
+  .sub{ font-size:clamp(13px,3.5vw,18px); color:var(--gold); margin:6px 0 18px;
+    text-shadow:2px 2px 0 rgba(0,0,0,.4); }
+  .rules{ font-size:clamp(11px,3vw,14px); line-height:1.8; color:#ffd5ee; max-width:520px; margin-bottom:20px; }
+  .rules b{ color:var(--green); }
+  .btn{ font-family:'Press Start 2P'; font-size:clamp(12px,3.4vw,16px); color:var(--ink);
+    background:linear-gradient(var(--gold),#ffb44d); border:none; padding:16px 26px; cursor:pointer;
+    box-shadow:5px 5px 0 var(--pink),0 0 20px rgba(255,46,136,.5); letter-spacing:1px; }
+  .btn:active{ transform:translate(3px,3px); box-shadow:2px 2px 0 var(--pink); }
+  .big{ font-family:'Press Start 2P'; font-size:clamp(22px,6vw,40px); color:var(--pink);
+    text-shadow:3px 3px 0 var(--cyan),0 0 20px var(--pink); margin:8px 0; }
+  .hs{ color:var(--gold); font-size:clamp(13px,3.5vw,18px); margin-top:8px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="540" height="960"></canvas>
+
+  <!-- 开始遮罩 -->
+  <div id="startScreen" class="overlay">
+    <div class="title">NEON<br>PINBALL</div>
+    <div class="sub">霓虹弹球 · OUTRUN</div>
+    <div class="rules">
+      <b>挡板</b>:左=←/左Shift · 右=→/右Shift<br>
+      手机:点屏幕<b>左半 / 右半</b>拍挡板<br>
+      撞<b>发光凸点</b>加分 · 命中<b>目标</b>更高分<br>
+      球落底部缺口失去一球 · <b>3 球</b>用完结束
+    </div>
+    <button class="btn" id="startBtn">▶ START</button>
+    <div class="hs" id="hsStart">HI 0</div>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div id="overScreen" class="overlay hidden">
+    <div class="title" style="font-size:clamp(16px,4.5vw,28px)">GAME OVER</div>
+    <div class="big" id="finalScore">0</div>
+    <div class="hs" id="hsOver">HI 0</div>
+    <button class="btn" id="againBtn" style="margin-top:18px">↺ RETRY</button>
+  </div>
+</div>
+<div id="crt"></div>
+<button id="mute">♪ ON</button>
+
+<script>
+/* =======================================================================
+   NEON PINBALL — 自写 2D 物理弹球
+   竖向桌:重力 / 挡板旋转推球 / 圆-圆 & 圆-线反射 / 子步进防穿透
+   ======================================================================= */
+(()=>{
+'use strict';
+
+// ---------- 画布 ----------
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;      // 逻辑分辨率 540x960
+
+// ---------- URL 参数 ----------
+const params = new URLSearchParams(location.search);
+const DEMO = params.has('demo') || params.has('record');
+const RECORD = params.has('record') ? Math.max(1, parseInt(params.get('record'))||15) : 0;
+
+// ---------- 配色 ----------
+const C = { pink:'#ff2e88', cyan:'#5ef0ff', magenta:'#ff5ec8', gold:'#ffd95e', green:'#5effa0', ink:'#160a36' };
+
+// ---------- 音频 ----------
+const Audio_ = {
+  ac:null, master:null, muted:false, musicGain:null, musicTimer:null, step:0,
+  init(){
+    if(this.ac) return;
+    try{
+      this.ac = new (window.AudioContext||window.webkitAudioContext)();
+      this.master = this.ac.createGain(); this.master.gain.value = 0.5; this.master.connect(this.ac.destination);
+      this.musicGain = this.ac.createGain(); this.musicGain.gain.value = 0.16; this.musicGain.connect(this.master);
+    }catch(e){}
+  },
+  resume(){ if(this.ac && this.ac.state==='suspended') this.ac.resume(); },
+  beep(freq, dur, type='square', vol=0.3, slide=0){
+    if(!this.ac||this.muted) return;
+    const t=this.ac.currentTime;
+    const o=this.ac.createOscillator(), g=this.ac.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq,t);
+    if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(40,freq*slide), t+dur);
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t+dur+0.02);
+  },
+  bumper(){ this.beep(660,0.10,'square',0.28,1.6); },
+  flip(){ this.beep(180,0.05,'sawtooth',0.18,1.4); },
+  target(){ this.beep(880,0.08,'triangle',0.30,1.5); setTimeout(()=>this.beep(1240,0.10,'triangle',0.25,1.5),60); },
+  lose(){ this.beep(300,0.5,'sawtooth',0.30,0.25); },
+  launch(){ this.beep(220,0.25,'square',0.28,3.0); },
+  // 合成波循环配乐:简单琶音 bass+lead
+  startMusic(){
+    if(!this.ac||this.musicTimer) return;
+    const bass=[55,55,82.4,73.4], lead=[440,523,659,587,523,440,392,523];
+    let bi=0, li=0;
+    const tick=()=>{
+      if(this.muted){ this.step++; return; }
+      const t=this.ac.currentTime;
+      // bass 每两拍
+      if(this.step%2===0){
+        const o=this.ac.createOscillator(),g=this.ac.createGain();
+        o.type='sawtooth'; o.frequency.value=bass[bi%bass.length]; bi++;
+        g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.5,t+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001,t+0.45);
+        o.connect(g); g.connect(this.musicGain); o.start(t); o.stop(t+0.5);
+      }
+      // lead 每拍
+      const o2=this.ac.createOscillator(),g2=this.ac.createGain();
+      o2.type='triangle'; o2.frequency.value=lead[li%lead.length]; li++;
+      g2.gain.setValueAtTime(0.0001,t); g2.gain.linearRampToValueAtTime(0.35,t+0.02);
+      g2.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+      o2.connect(g2); g2.connect(this.musicGain); o2.start(t); o2.stop(t+0.25);
+      this.step++;
+    };
+    this.musicTimer=setInterval(tick, 260);
+  }
+};
+
+// ---------- 数学工具 ----------
+const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+const lerp=(a,b,t)=>a+(b-a)*t;
+function reflect(vx,vy,nx,ny,rest){ const d=vx*nx+vy*ny; return [vx-(1+rest)*d*nx, vy-(1+rest)*d*ny]; }
+
+// 点到线段最近点
+function closestOnSeg(px,py,ax,ay,bx,by){
+  const dx=bx-ax, dy=by-ay; const L2=dx*dx+dy*dy;
+  let t = L2>0 ? ((px-ax)*dx+(py-ay)*dy)/L2 : 0;
+  t=clamp(t,0,1);
+  return [ax+dx*t, ay+dy*t, t];
+}
+
+// ---------- 游戏对象 ----------
+const GRAV = 1500;           // 重力 px/s^2 (逻辑像素)
+const BALL_R = 11;
+const REST_WALL = 0.78;      // 墙体回弹
+const REST_BUMP = 1.06;      // 凸点回弹(略加速)
+
+// 球
+const ball = { x:0, y:0, vx:0, vy:0, r:BALL_R, alive:true, stuck:false };
+
+// 静态线段墙(斜壁、外框、漏斗)
+let walls = [];
+// 凸点
+let bumpers = [];
+// 得分目标(矩形旋转灯,顶部三个)
+let targets = [];
+// 挡板
+let flippers = [];
+
+// 状态
+let balls = 3, score = 0, level = 1, running=false, lastT=0;
+let particles=[];
+let shake=0;
+let hiscore = +(localStorage.getItem('neonPinballHi')||0);
+
+// 挡板对象工厂
+function makeFlipper(side){
+  // 底部两挡板,以靠中缺口外侧为枢轴
+  const gap = 78;                       // 底部缺口半宽
+  const len = 118;                      // 挡板长
+  const pivotY = H-120;
+  const restAng = side<0 ? 0.42 : Math.PI-0.42;   // 静止角(弧度,向下倾斜)
+  const upAng   = side<0 ? -0.46 : Math.PI+0.46;  // 抬起角
+  const px = side<0 ? W/2-gap : W/2+gap;
+  return {
+    side, px, py:pivotY, len, r:13,
+    rest:restAng, up:upAng, ang:restAng, prevAng:restAng,
+    target:restAng, active:false, omega:0
+  };
+}
+
+// ---------- 关卡布局 ----------
+function buildLevel(){
+  walls=[]; bumpers=[]; targets=[];
+  const m=14; // 外边距
+  // 外框(留底部缺口)
+  walls.push({a:[m,m],b:[W-m,m]});                 // 顶
+  walls.push({a:[m,m],b:[m,H-180]});               // 左
+  walls.push({a:[W-m,m],b:[W-m,H-180]});           // 右
+  // 下部漏斗斜壁(把球导向中间挡板)
+  walls.push({a:[m,H-180],b:[W/2-78,H-110]});      // 左漏斗
+  walls.push({a:[W-m,H-180],b:[W/2+78,H-110]});    // 右漏斗
+  // 挡板上方的内侧短斜壁(挡板枢轴外侧的护栏)
+  walls.push({a:[m,H-180],b:[m,H-150]});
+  walls.push({a:[W-m,H-180],b:[W-m,H-150]});
+  // 中部斜导轨
+  walls.push({a:[m+8,260],b:[150,360]});
+  walls.push({a:[W-m-8,260],b:[W-150,360]});
+
+  // 凸点 bumper(发光圆)
+  const bx=W/2, by=300;
+  bumpers.push({x:bx, y:by, r:32, hit:0, val:100, col:C.pink});
+  bumpers.push({x:bx-110, y:by+90, r:27, hit:0, val:100, col:C.cyan});
+  bumpers.push({x:bx+110, y:by+90, r:27, hit:0, val:100, col:C.green});
+  bumpers.push({x:bx-70, y:by+200, r:24, hit:0, val:150, col:C.gold});
+  bumpers.push({x:bx+70, y:by+200, r:24, hit:0, val:150, col:C.magenta});
+  // 随关卡增加难度:多一个移动凸点
+  if(level>=2){ bumpers.push({x:bx, y:by+150, r:22, hit:0, val:200, col:C.cyan, mov:true, t:0, ox:bx, amp:120}); }
+  if(level>=3){ bumpers.push({x:bx, y:520, r:20, hit:0, val:250, col:C.gold, mov:true, t:1.5, ox:bx, amp:150, spd:1.4}); }
+
+  // 顶部得分目标(命中翻灭再生)
+  const ty=130;
+  for(let i=0;i<3;i++){
+    targets.push({x:120+i*150, y:ty, w:64, h:20, lit:true, val:500, cd:0});
+  }
+
+  // 挡板
+  flippers=[ makeFlipper(-1), makeFlipper(1) ];
+}
+
+// ---------- 发球 ----------
+function launchBall(){
+  ball.x = W/2 + (Math.random()*40-20);
+  ball.y = 70;
+  ball.vx = (Math.random()*120-60);
+  ball.vy = 120;
+  ball.alive = true;
+  Audio_.launch();
+}
+
+// ---------- 重置/开始 ----------
+function startGame(){
+  balls=3; score=0; level=1;
+  buildLevel();
+  particles=[];
+  running=true; lastT=performance.now();
+  document.getElementById('startScreen').classList.add('hidden');
+  document.getElementById('overScreen').classList.add('hidden');
+  launchBall();
+}
+
+function loseBall(){
+  ball.alive=false;
+  balls--;
+  Audio_.lose();
+  shake=14;
+  spawn(ball.x, H-60, C.pink, 30);
+  if(balls<=0){ endGame(); }
+  else { setTimeout(()=>{ if(running) launchBall(); }, 900); }
+}
+
+function endGame(){
+  running=false;
+  if(score>hiscore){ hiscore=score; localStorage.setItem('neonPinballHi',hiscore); }
+  document.getElementById('finalScore').textContent=score;
+  document.getElementById('hsOver').textContent='HI '+hiscore;
+  document.getElementById('overScreen').classList.remove('hidden');
+}
+
+// 关卡推进
+function maybeLevelUp(){
+  const nl = 1 + Math.floor(score/3000);
+  if(nl>level){ level=nl; rebuildKeepBall(); }
+}
+function rebuildKeepBall(){
+  const sx=ball.x, sy=ball.y, svx=ball.vx, svy=ball.vy;
+  buildLevel();
+  ball.x=sx; ball.y=sy; ball.vx=svx; ball.vy=svy; ball.alive=true;
+}
+
+// ---------- 粒子 ----------
+function spawn(x,y,col,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, s=60+Math.random()*220;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:0.5+Math.random()*0.4,age:0,col});
+  }
+}
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.age+=dt;
+    if(p.age>=p.life){ particles.splice(i,1); continue; }
+    p.vy+=400*dt; p.x+=p.vx*dt; p.y+=p.vy*dt;
+  }
+}
+
+// =======================================================================
+//  物理:子步进 + 碰撞
+// =======================================================================
+function physics(dt){
+  if(!ball.alive) return;
+  // 重力
+  ball.vy += GRAV*dt;
+  // 限速防穿透
+  const sp = Math.hypot(ball.vx,ball.vy), maxSp=1700;
+  if(sp>maxSp){ ball.vx*=maxSp/sp; ball.vy*=maxSp/sp; }
+
+  // 子步进:每步移动不超过半径的 40%
+  const moveLen = Math.hypot(ball.vx,ball.vy)*dt;
+  const steps = Math.max(1, Math.ceil(moveLen/(ball.r*0.4)));
+  const sdt = dt/steps;
+  for(let s=0;s<steps;s++){
+    ball.x += ball.vx*sdt;
+    ball.y += ball.vy*sdt;
+    collideWalls();
+    collideBumpers();
+    collideTargets();
+    collideFlippers(sdt);
+    // 底部:落入缺口判定
+    if(ball.y - ball.r > H+10){ loseBall(); return; }
+  }
+}
+
+// 圆-线 反射(含外框约束)
+function collideWalls(){
+  for(const w of walls){
+    const [cx,cy] = closestOnSeg(ball.x,ball.y,w.a[0],w.a[1],w.b[0],w.b[1]);
+    let dx=ball.x-cx, dy=ball.y-cy;
+    let d=Math.hypot(dx,dy);
+    if(d < ball.r){
+      if(d<0.0001){ dx=0; dy=-1; d=1; }
+      const nx=dx/d, ny=dy/d;
+      // 推出
+      const pen=ball.r-d;
+      ball.x += nx*pen; ball.y += ny*pen;
+      // 仅当向内运动时反射
+      const vn=ball.vx*nx+ball.vy*ny;
+      if(vn<0){ [ball.vx,ball.vy]=reflect(ball.vx,ball.vy,nx,ny,REST_WALL); }
+    }
+  }
+  // 硬性外框兜底(防极端穿透)
+  const m=14;
+  if(ball.x<m+ball.r){ ball.x=m+ball.r; if(ball.vx<0) ball.vx=-ball.vx*REST_WALL; }
+  if(ball.x>W-m-ball.r){ ball.x=W-m-ball.r; if(ball.vx>0) ball.vx=-ball.vx*REST_WALL; }
+  if(ball.y<m+ball.r){ ball.y=m+ball.r; if(ball.vy<0) ball.vy=-ball.vy*REST_WALL; }
+}
+
+// 圆-圆 凸点
+function collideBumpers(){
+  for(const b of bumpers){
+    let dx=ball.x-b.x, dy=ball.y-b.y;
+    let d=Math.hypot(dx,dy);
+    const rr=b.r+ball.r;
+    if(d<rr){
+      if(d<0.0001){ dx=0;dy=-1;d=1; }
+      const nx=dx/d, ny=dy/d;
+      const pen=rr-d; ball.x+=nx*pen; ball.y+=ny*pen;
+      const vn=ball.vx*nx+ball.vy*ny;
+      if(vn<0){
+        [ball.vx,ball.vy]=reflect(ball.vx,ball.vy,nx,ny,REST_BUMP);
+        // 额外冲量,弹球感
+        ball.vx+=nx*120; ball.vy+=ny*120;
+      }
+      b.hit=0.25;
+      addScore(b.val);
+      Audio_.bumper();
+      spawn(ball.x,ball.y,b.col,8);
+      shake=Math.max(shake,5);
+    }
+  }
+}
+
+// 圆-矩形 目标(顶部小灯条)
+function collideTargets(){
+  for(const t of targets){
+    if(!t.lit){ t.cd-=1/60; if(t.cd<=0) t.lit=true; continue; }
+    const cx=clamp(ball.x, t.x-t.w/2, t.x+t.w/2);
+    const cy=clamp(ball.y, t.y-t.h/2, t.y+t.h/2);
+    let dx=ball.x-cx, dy=ball.y-cy; let d=Math.hypot(dx,dy);
+    if(d<ball.r){
+      if(d<0.0001){ dx=0;dy=1;d=1; }
+      const nx=dx/d, ny=dy/d;
+      ball.x+=nx*(ball.r-d); ball.y+=ny*(ball.r-d);
+      const vn=ball.vx*nx+ball.vy*ny;
+      if(vn<0)[ball.vx,ball.vy]=reflect(ball.vx,ball.vy,nx,ny,0.6);
+      t.lit=false; t.cd=4;       // 4 秒后再生
+      addScore(t.val);
+      Audio_.target();
+      spawn(t.x,t.y,C.gold,16);
+      shake=Math.max(shake,7);
+    }
+  }
+}
+
+// 挡板:线段碰撞 + 旋转推球(枢轴角速度→切向速度)
+function collideFlippers(sdt){
+  for(const f of flippers){
+    // 当前挡板线段端点
+    const ex=f.px+Math.cos(f.ang)*f.len, ey=f.py+Math.sin(f.ang)*f.len;
+    const [cx,cy,tt]=closestOnSeg(ball.x,ball.y,f.px,f.py,ex,ey);
+    let dx=ball.x-cx, dy=ball.y-cy; let d=Math.hypot(dx,dy);
+    const rr=f.r+ball.r;
+    if(d<rr){
+      if(d<0.0001){ dx=0;dy=-1;d=1; }
+      const nx=dx/d, ny=dy/d;
+      ball.x+=nx*(rr-d); ball.y+=ny*(rr-d);
+      // 接触点相对枢轴的旋转线速度(omega × r)
+      const rxp = cx-f.px, ryp = cy-f.py;
+      const tangVx = -f.omega*ryp, tangVy = f.omega*rxp;
+      // 相对速度法向分量
+      const rvx=ball.vx-tangVx, rvy=ball.vy-tangVy;
+      const vn=rvx*nx+rvy*ny;
+      if(vn<0){
+        const rest = 0.5 + Math.min(0.6, Math.abs(f.omega)*0.08);
+        let [nvx,nvy]=reflect(rvx,rvy,nx,ny,rest);
+        ball.vx=nvx+tangVx; ball.vy=nvy+tangVy;
+        // 挡板挥击额外推力
+        if(f.active){
+          ball.vx+=nx*220*Math.min(1,tt+0.3);
+          ball.vy+=ny*220*Math.min(1,tt+0.3);
+          Audio_.flip();
+        }
+      }
+    }
+  }
+}
+
+function addScore(v){
+  score+=v;
+  maybeLevelUp();
+}
+
+// =======================================================================
+//  更新挡板角度(平滑旋转,记录角速度)
+// =======================================================================
+function updateFlippers(dt){
+  for(const f of flippers){
+    f.prevAng=f.ang;
+    const tgt = f.active ? f.up : f.rest;
+    const sp = 26; // 旋转速度
+    f.ang = lerp(f.ang, tgt, clamp(sp*dt,0,1));
+    f.omega = (f.ang-f.prevAng)/Math.max(dt,1e-4);
+  }
+}
+
+// =======================================================================
+//  AI(?demo):预测球落点,适时拍击对应挡板
+// =======================================================================
+const AI = {
+  on:DEMO, lt:0, rt:0,
+  think(dt){
+    // 计时释放(即使球已失效也要继续,避免挡板卡在抬起状态)
+    if(this.lt>0){ this.lt-=dt; if(this.lt<=0) flippers[0].active=false; }
+    if(this.rt>0){ this.rt-=dt; if(this.rt<=0) flippers[1].active=false; }
+    if(!ball.alive){ flippers[0].active=false; flippers[1].active=false; this.lt=0; this.rt=0; return; }
+    // 球进入挡板区域且下落时,判断会落向哪侧,提前抬板
+    const zoneY = H-260;
+    if(ball.y>zoneY && ball.vy>0){
+      // 简单线性预测到挡板高度
+      const flipY=H-120;
+      const tt = (flipY-ball.y)/Math.max(ball.vy,30);
+      const px = ball.x+ball.vx*tt;
+      if(px < W/2){ flippers[0].active=true; this.lt=0.16; }
+      else { flippers[1].active=true; this.rt=0.16; }
+    }
+    // 偶发双拍救险
+    if(ball.y>H-150){ flippers[0].active=true; flippers[1].active=true; this.lt=0.14; this.rt=0.14; }
+  }
+};
+
+// =======================================================================
+//  渲染
+// =======================================================================
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.save();
+  if(shake>0){ ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake); }
+
+  // 背景渐变(桌面)
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#160a36'); g.addColorStop(.45,'#2a1050');
+  g.addColorStop(.62,'#5a1f5e'); g.addColorStop(.7,'#a23a64');
+  g.addColorStop(.78,'#160a36');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // 网格地平线(合成波)
+  ctx.strokeStyle='rgba(94,240,255,.13)'; ctx.lineWidth=1;
+  for(let y=H*0.45;y<H;y+=26){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  for(let x=0;x<=W;x+=40){ ctx.beginPath(); ctx.moveTo(x,H*0.45); ctx.lineTo(W/2+(x-W/2)*2.2,H); ctx.stroke(); }
+
+  // 墙
+  ctx.lineCap='round';
+  for(const w of walls){
+    ctx.strokeStyle=C.cyan; ctx.lineWidth=5; ctx.shadowColor=C.cyan; ctx.shadowBlur=12;
+    ctx.beginPath(); ctx.moveTo(w.a[0],w.a[1]); ctx.lineTo(w.b[0],w.b[1]); ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+
+  // 底部缺口标记(危险区)
+  ctx.fillStyle='rgba(255,46,136,.12)';
+  ctx.fillRect(W/2-78,H-110,156,120);
+
+  // 目标灯条
+  for(const t of targets){
+    ctx.save();
+    if(t.lit){ ctx.shadowColor=C.gold; ctx.shadowBlur=16; ctx.fillStyle=C.gold; }
+    else { ctx.shadowBlur=0; ctx.fillStyle='rgba(120,120,150,.35)'; }
+    ctx.fillRect(t.x-t.w/2,t.y-t.h/2,t.w,t.h);
+    ctx.strokeStyle=t.lit?'#fff':'#666'; ctx.lineWidth=2; ctx.strokeRect(t.x-t.w/2,t.y-t.h/2,t.w,t.h);
+    ctx.restore();
+  }
+
+  // 凸点
+  for(const b of bumpers){
+    const pulse = b.hit>0 ? 1+b.hit*0.6 : 1;
+    ctx.save();
+    ctx.shadowColor=b.col; ctx.shadowBlur=22;
+    ctx.fillStyle=b.col; ctx.globalAlpha=0.9;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r*pulse,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=1; ctx.fillStyle='rgba(255,255,255,'+(0.25+b.hit)+')';
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r*0.5*pulse,0,Math.PI*2); ctx.fill();
+    ctx.lineWidth=3; ctx.strokeStyle='#fff'; ctx.shadowBlur=0;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r*pulse,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+    if(b.hit>0) b.hit-=1/60;
+  }
+
+  // 挡板
+  for(const f of flippers){
+    const ex=f.px+Math.cos(f.ang)*f.len, ey=f.py+Math.sin(f.ang)*f.len;
+    ctx.save();
+    ctx.lineCap='round';
+    ctx.shadowColor=C.pink; ctx.shadowBlur=14;
+    ctx.strokeStyle=f.active?'#fff':C.pink; ctx.lineWidth=f.r*2;
+    ctx.beginPath(); ctx.moveTo(f.px,f.py); ctx.lineTo(ex,ey); ctx.stroke();
+    // 枢轴
+    ctx.fillStyle=C.gold; ctx.shadowBlur=0;
+    ctx.beginPath(); ctx.arc(f.px,f.py,6,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  // 粒子
+  for(const p of particles){
+    const a=1-p.age/p.life;
+    ctx.globalAlpha=a; ctx.fillStyle=p.col;
+    ctx.fillRect(p.x-2,p.y-2,4,4);
+  }
+  ctx.globalAlpha=1;
+
+  // 球
+  if(ball.alive){
+    ctx.save();
+    ctx.shadowColor=C.cyan; ctx.shadowBlur=18;
+    const bg=ctx.createRadialGradient(ball.x-3,ball.y-3,2,ball.x,ball.y,ball.r);
+    bg.addColorStop(0,'#fff'); bg.addColorStop(1,C.cyan);
+    ctx.fillStyle=bg;
+    ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // HUD(不抖动)
+  drawHUD();
+}
+
+function drawHUD(){
+  ctx.save();
+  ctx.font='16px "Press Start 2P",monospace';
+  ctx.textBaseline='top';
+  // 分数
+  ctx.fillStyle=C.gold; ctx.shadowColor=C.pink; ctx.shadowBlur=8;
+  ctx.fillText('SCORE '+score, 22, 22);
+  // 球数
+  ctx.fillStyle=C.cyan; ctx.shadowColor=C.cyan;
+  ctx.textAlign='right';
+  ctx.fillText('BALL '+Math.max(0,balls), W-22, 22);
+  // 关卡
+  ctx.fillStyle=C.green; ctx.font='11px "Press Start 2P",monospace';
+  ctx.fillText('LV '+level, W-22, 48);
+  ctx.textAlign='left';
+  ctx.fillStyle=C.magenta;
+  ctx.fillText('HI '+hiscore, 22, 48);
+  if(DEMO){ ctx.fillStyle=C.pink; ctx.fillText('AI DEMO', 22, H-30); }
+  ctx.restore();
+}
+
+// =======================================================================
+//  主循环
+// =======================================================================
+function loop(now){
+  requestAnimationFrame(loop);
+  let dt=(now-lastT)/1000; lastT=now;
+  if(dt>0.05) dt=0.05;       // 防卡顿大跳
+  if(running){
+    if(AI.on) AI.think(dt);
+    updateFlippers(dt);
+    physics(dt);
+    updateParticles(dt);
+  } else {
+    updateParticles(dt);
+  }
+  if(shake>0){ shake-=dt*30; if(shake<0)shake=0; }
+  draw();
+}
+
+// =======================================================================
+//  输入
+// =======================================================================
+function setFlipper(side,on){
+  if(side<0) flippers[0].active=on; else flippers[1].active=on;
+}
+window.addEventListener('keydown',e=>{
+  if(e.repeat) return;
+  if(e.code==='ArrowLeft'||e.code==='ShiftLeft'){ setFlipper(-1,true); }
+  if(e.code==='ArrowRight'||e.code==='ShiftRight'){ setFlipper(1,true); }
+  if(e.code==='Space'||e.code==='Enter'){
+    if(!running && document.getElementById('startScreen').classList.contains('hidden')===false){ doStart(); }
+  }
+});
+window.addEventListener('keyup',e=>{
+  if(e.code==='ArrowLeft'||e.code==='ShiftLeft'){ if(!AI.on) setFlipper(-1,false); }
+  if(e.code==='ArrowRight'||e.code==='ShiftRight'){ if(!AI.on) setFlipper(1,false); }
+});
+// 触屏:左右半边
+function touchHandler(e, on){
+  const r=cv.getBoundingClientRect();
+  for(const t of e.changedTouches){
+    if(t.clientX-r.left < r.width/2) setFlipper(-1,on); else setFlipper(1,on);
+  }
+}
+cv.addEventListener('touchstart',e=>{ e.preventDefault(); if(!AI.on) touchHandler(e,true); },{passive:false});
+cv.addEventListener('touchend',e=>{ e.preventDefault(); if(!AI.on) touchHandler(e,false); },{passive:false});
+// 鼠标(桌面点按测试,左右半屏)
+cv.addEventListener('mousedown',e=>{
+  if(AI.on) return;
+  const r=cv.getBoundingClientRect();
+  if(e.clientX-r.left < r.width/2) setFlipper(-1,true); else setFlipper(1,true);
+});
+window.addEventListener('mouseup',()=>{ if(!AI.on){ setFlipper(-1,false); setFlipper(1,false); } });
+
+// =======================================================================
+//  按钮 / 启动
+// =======================================================================
+function doStart(){
+  Audio_.init(); Audio_.resume(); Audio_.startMusic();
+  startGame();
+}
+document.getElementById('startBtn').addEventListener('click',doStart);
+document.getElementById('againBtn').addEventListener('click',()=>{ Audio_.resume(); startGame(); });
+document.getElementById('mute').addEventListener('click',()=>{
+  Audio_.muted=!Audio_.muted;
+  if(Audio_.master) Audio_.master.gain.value=Audio_.muted?0:0.5;
+  document.getElementById('mute').textContent=Audio_.muted?'♪ OFF':'♪ ON';
+});
+
+// 初始 HUD 最高分
+document.getElementById('hsStart').textContent='HI '+hiscore;
+
+// =======================================================================
+//  录制(?record=N)
+// =======================================================================
+function startRecording(N){
+  try{
+    const stream=cv.captureStream(30);
+    let mt='video/webm;codecs=vp9'; if(!MediaRecorder.isTypeSupported(mt)) mt='video/webm';
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[]; mr.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{ const blob=new Blob(chunks,{type:'video/webm'}); const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download='neon-pinball.webm'; document.body.appendChild(a); try{a.click()}catch(e){} };
+    mr.start(); setTimeout(()=>mr.stop(), N*1000);
+  }catch(e){ console.warn('record failed',e); }
+}
+
+// =======================================================================
+//  启动循环 + DEMO 自动开局
+// =======================================================================
+buildLevel();              // 先建好布局供遮罩背景外渲染
+requestAnimationFrame(loop);
+
+if(DEMO){
+  // 免手势直接开局(音频可能挂起,录制只抓画面)
+  Audio_.init();
+  // 尝试 resume(可能被策略阻止,不影响画面)
+  try{ Audio_.resume(); Audio_.startMusic(); }catch(e){}
+  startGame();
+  if(RECORD){ setTimeout(()=>startRecording(RECORD), 400); }
+}
+
+})();
+</script>
+</body>
+</html>

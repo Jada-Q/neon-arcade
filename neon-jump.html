@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON JUMP — 霓虹攀登</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== 全局合成波风格 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8; --gold:#ffd95e; --green:#5effa0;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#160a36; }
+  body{
+    font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+    color:#fff; -webkit-user-select:none; user-select:none; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
+  }
+  /* 游戏舞台:竖屏友好 */
+  #stage{
+    position:relative;
+    width:100%; height:100%;
+    max-width:520px; max-height:100vh;
+    margin:0 auto;
+    background:#0c0620;
+    box-shadow:0 0 60px rgba(94,240,255,.18);
+    overflow:hidden;
+  }
+  canvas#game{ display:block; width:100%; height:100%; image-rendering:pixelated; }
+
+  /* CRT 扫描线叠加 */
+  #crt{
+    position:absolute; inset:0; pointer-events:none; z-index:30; mix-blend-mode:overlay; opacity:.35;
+    background:repeating-linear-gradient(to bottom, rgba(255,255,255,.05) 0, rgba(255,255,255,.05) 1px, rgba(0,0,0,.18) 2px, rgba(0,0,0,.18) 3px);
+  }
+
+  /* HUD */
+  #hud{
+    position:absolute; top:0; left:0; right:0; z-index:20;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:12px 14px; pointer-events:none;
+  }
+  .scoreBox{
+    font-family:'Press Start 2P',monospace; font-size:13px; line-height:1.7;
+    color:var(--cyan); text-shadow:2px 2px 0 var(--pink);
+  }
+  .scoreBox .best{ font-size:9px; color:var(--gold); text-shadow:1px 1px 0 #5a2a00; }
+  #muteBtn{
+    pointer-events:auto; cursor:pointer;
+    font-family:'Press Start 2P',monospace; font-size:11px; color:var(--gold);
+    background:#1a0e33; border:2px solid var(--gold);
+    box-shadow:3px 3px 0 var(--pink); padding:8px 9px; border-radius:4px;
+  }
+  #muteBtn:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--pink); }
+
+  /* 遮罩(开始 / 结束) */
+  .overlay{
+    position:absolute; inset:0; z-index:40;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    background:radial-gradient(ellipse at 50% 30%, rgba(122,42,110,.55), rgba(12,6,32,.92));
+    backdrop-filter:blur(2px);
+  }
+  .overlay.hidden{ display:none; }
+  .title{
+    font-family:'Press Start 2P',monospace; font-size:26px; line-height:1.35;
+    color:var(--cyan); text-shadow:4px 4px 0 var(--pink), 0 0 18px rgba(94,240,255,.6);
+    margin-bottom:8px; letter-spacing:1px;
+  }
+  .subtitle{
+    font-family:'Press Start 2P',monospace; font-size:11px; color:var(--gold);
+    text-shadow:2px 2px 0 #5a2a00; margin-bottom:22px;
+  }
+  .panel{
+    border:3px solid var(--magenta); box-shadow:5px 5px 0 var(--cyan);
+    background:rgba(20,10,40,.7); border-radius:8px;
+    padding:16px 20px; max-width:380px; font-size:15px; line-height:1.9; color:#ffe8fb;
+  }
+  .panel b{ color:var(--green); }
+  .key{
+    display:inline-block; background:#241140; border:1px solid var(--cyan);
+    border-radius:4px; padding:1px 7px; font-family:'Press Start 2P',monospace; font-size:9px; color:var(--cyan);
+  }
+  .btn{
+    margin-top:24px; cursor:pointer;
+    font-family:'Press Start 2P',monospace; font-size:15px; color:#160a36;
+    background:linear-gradient(180deg,var(--gold),#ff9a4d);
+    border:none; box-shadow:5px 5px 0 var(--pink); padding:16px 26px; border-radius:6px;
+    text-shadow:1px 1px 0 #ffe6a8;
+  }
+  .btn:active{ transform:translate(3px,3px); box-shadow:2px 2px 0 var(--pink); }
+  .goScore{
+    font-family:'Press Start 2P',monospace; font-size:20px; color:var(--gold);
+    text-shadow:3px 3px 0 var(--pink); margin:6px 0;
+  }
+  .goBest{ font-family:'Press Start 2P',monospace; font-size:11px; color:var(--green); margin-bottom:6px; }
+  .hintMobile{ margin-top:14px; font-size:12px; color:var(--cyan); opacity:.85; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+  <div id="crt"></div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="scoreBox">
+      <div id="scoreTxt">0</div>
+      <div class="best" id="bestTxt">BEST 0</div>
+    </div>
+    <div id="muteBtn">♪ ON</div>
+  </div>
+
+  <!-- 开始遮罩 -->
+  <div class="overlay" id="startOverlay">
+    <div class="title">NEON<br>JUMP</div>
+    <div class="subtitle">霓虹攀登</div>
+    <div class="panel">
+      自动反弹,踩着 <b>霓虹平台</b> 一路往上爬。<br>
+      <span class="key">← →</span> / <span class="key">A D</span> 左右移动<br>
+      手机:<b>触屏左右</b> 或 <b>重力倾斜</b><br>
+      左右出界会 <b>环绕</b>;漏踩跌出底部 <b>GAME OVER</b><br>
+      接 <b>弹簧</b> 弹更高 · 高度即分数
+    </div>
+    <button class="btn" id="startBtn">PRESS START</button>
+    <div class="hintMobile">点击开始 · 启用音效</div>
+  </div>
+
+  <!-- 结束遮罩 -->
+  <div class="overlay hidden" id="overOverlay">
+    <div class="title" style="font-size:22px;">GAME<br>OVER</div>
+    <div class="goScore" id="goScore">0</div>
+    <div class="goBest" id="goBest">BEST 0</div>
+    <button class="btn" id="retryBtn">RETRY</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   NEON JUMP — Doodle Jump 式竖屏攀登(合成波 OutRun 风格)
+   原生 Canvas 2D · requestAnimationFrame + delta time · 程序化音效
+   ========================================================================= */
+
+// ---------- URL 参数:演示 / 录制 ----------
+const params   = new URLSearchParams(location.search);
+const DEMO     = params.has('demo') || params.has('record');
+const RECORD_N = params.has('record') ? Math.max(1, parseInt(params.get('record'),10) || 20) : 0;
+
+// ---------- DOM ----------
+const stage    = document.getElementById('stage');
+const canvas   = document.getElementById('game');
+const ctx      = canvas.getContext('2d');
+const scoreTxt = document.getElementById('scoreTxt');
+const bestTxt  = document.getElementById('bestTxt');
+const muteBtn  = document.getElementById('muteBtn');
+const startOv  = document.getElementById('startOverlay');
+const overOv   = document.getElementById('overOverlay');
+const startBtn = document.getElementById('startBtn');
+const retryBtn = document.getElementById('retryBtn');
+const goScore  = document.getElementById('goScore');
+const goBest   = document.getElementById('goBest');
+
+// ---------- 游戏状态(提前声明,供 resize 在游玩中安全引用)----------
+const State = { READY:0, PLAY:1, OVER:2 };
+let state = State.READY;
+
+// ---------- 逻辑分辨率(竖屏)----------
+let W = 480, H = 800;      // 内部逻辑像素
+let DPR = 1;
+
+// 自适应:仅在尺寸真正变化时重设(避免录制期间清空画布)
+function resize(){
+  let rw = stage.clientWidth  || window.innerWidth  || 480;
+  let rh = stage.clientHeight || window.innerHeight || 800;
+  if(rw <= 0) rw = 480;
+  if(rh <= 0) rh = 800;
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const newW = Math.round(rw);
+  const newH = Math.round(rh);
+  const prevH = H;
+  // 游玩中高度变化:平移相机,保持玩家在屏幕上的相对位置不变,避免误判跌落死亡
+  if(state === State.PLAY && newH !== prevH){
+    cameraY += (player.y - cameraY) * (1 - newH / prevH);
+  }
+  W = newW;
+  H = newH;
+  const cw = Math.round(rw * DPR);
+  const ch = Math.round(rh * DPR);
+  // 仅在像素尺寸真正变化时重设(重设会清空画布,故录制/同尺寸时避免)
+  if(canvas.width !== cw || canvas.height !== ch){
+    canvas.width  = cw;
+    canvas.height = ch;
+  }
+}
+window.addEventListener('resize', resize);
+resize();
+
+// =========================================================================
+//  音频:Web Audio 程序化音效 + 合成波循环
+// =========================================================================
+const Audio2 = (()=>{
+  let actx=null, master=null, musicGain=null, sfxGain=null, muted=false;
+  let musicTimer=null, started=false;
+
+  function ensure(){
+    if(actx) return;
+    try{
+      actx = new (window.AudioContext||window.webkitAudioContext)();
+      master = actx.createGain(); master.gain.value = .9; master.connect(actx.destination);
+      musicGain = actx.createGain(); musicGain.gain.value = .22; musicGain.connect(master);
+      sfxGain   = actx.createGain(); sfxGain.gain.value   = .55; sfxGain.connect(master);
+    }catch(e){ actx=null; }
+  }
+  function resume(){ ensure(); if(actx && actx.state==='suspended') actx.resume(); }
+
+  // 单音
+  function blip(freq, dur, type='square', gain=.5, slideTo=null){
+    if(!actx || muted) return;
+    const t = actx.currentTime;
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t+dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t+dur+0.02);
+  }
+
+  // 音效集合
+  const sfx = {
+    jump(){ blip(420, .12, 'square', .35, 720); },
+    spring(){ blip(300, .26, 'sawtooth', .5, 1300); blip(900,.2,'square',.25,1600); },
+    score(){ blip(660,.07,'square',.3,990); },
+    over(){ blip(300,.5,'sawtooth',.5,70); blip(200,.6,'triangle',.4,55); },
+    start(){ blip(523,.1,'square',.4,784); setTimeout(()=>blip(784,.15,'square',.4,1046),90); }
+  };
+
+  // ---- 合成波循环配乐:低音 + 琶音 ----
+  const bass = [55,55,82.4,49]; // A1 A1 E2 G1 风格
+  const arp  = [220,277,330,440,330,277]; // A C# E A ...
+  let step=0;
+  function tick(){
+    if(!actx) return;
+    const bi = Math.floor(step/4) % bass.length;
+    // 低音
+    blip(bass[bi], .42, 'triangle', .42*(muted?0:1));
+    // 琶音(挂到 musicGain)
+    if(!muted){
+      const t = actx.currentTime;
+      const o=actx.createOscillator(), g=actx.createGain();
+      o.type='sawtooth'; o.frequency.value = arp[step%arp.length];
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(.18,t+.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+.22);
+      o.connect(g); g.connect(musicGain);
+      o.start(t); o.stop(t+.25);
+    }
+    step++;
+  }
+  function startMusic(){
+    if(!actx || musicTimer) return;
+    started=true;
+    tick();
+    musicTimer = setInterval(tick, 200); // ~150 BPM 的八分音符
+  }
+  function setMuted(m){
+    muted=m;
+    if(master) master.gain.value = m?0:.9;
+  }
+  return { resume, sfx, startMusic, setMuted,
+           get muted(){return muted;}, get started(){return started;} };
+})();
+
+// =========================================================================
+//  游戏状态(State / state 已在顶部声明)
+// =========================================================================
+let best = parseInt(localStorage.getItem('neonjump_best')||'0',10) || 0;
+bestTxt.textContent = 'BEST ' + best;
+
+// 玩家
+const player = {
+  x: W/2, y: H*0.7, w: 34, h: 38,
+  vx: 0, vy: 0,
+  face: 1,           // 朝向
+  squash: 0          // 落地压扁动画
+};
+
+// 物理参数(按逻辑像素 / 秒)
+const GRAV     = 2100;     // 重力
+const JUMP_V   = -1050;    // 普通弹跳初速
+const SPRING_V = -1750;    // 弹簧弹跳
+const MOVE_A   = 4200;     // 水平加速度
+const MOVE_MAX = 560;      // 水平最大速度
+const FRICTION = 0.86;     // 水平阻尼
+
+// 平台
+let platforms = [];
+let particles = [];
+let cameraY = 0;          // 相机世界 Y(向上为负方向延伸)
+let worldTop = 0;         // 已生成平台的最高(最小 y)世界坐标
+let score = 0;
+let highestY = 0;         // 玩家到达过的最高(最小 y)
+let stars = [];          // 星空(视差)
+let shakeT = 0, shakeMag = 0;
+
+// 输入
+const input = { left:false, right:false, tilt:0 };
+
+// 平台类型
+const PT = { NORMAL:0, MOVING:1, FRAGILE:2 };
+
+// =========================================================================
+//  初始化 / 重置
+// =========================================================================
+function makeStars(){
+  stars = [];
+  for(let i=0;i<90;i++){
+    stars.push({
+      x: Math.random()*W,
+      y: Math.random()*H,
+      z: Math.random()*0.7+0.3,   // 视差深度
+      s: Math.random()*1.6+0.4,
+      tw: Math.random()*Math.PI*2
+    });
+  }
+}
+
+function resetGame(){
+  player.x = W/2; player.y = H*0.66; player.vx=0; player.vy=JUMP_V*0.7; player.face=1; player.squash=0;
+  cameraY = player.y - H*0.66;
+  score = 0; highestY = player.y;
+  particles.length = 0;
+  shakeT = 0;
+  platforms = [];
+  worldTop = player.y + 60;
+
+  // 起始平台:玩家正下方放一块,保证落地
+  platforms.push(makePlatform(W/2, player.y + 90, PT.NORMAL));
+  // 向上铺一批
+  let gy = player.y + 90;
+  while(gy > player.y - H*1.5){
+    gy -= rndGap(score);
+    platforms.push(makePlatform(rndX(), gy, pickType(gy)));
+    worldTop = Math.min(worldTop, gy);
+  }
+  makeStars();
+}
+
+function rndX(){ return 30 + Math.random()*(W-60); }
+function rndGap(scoreNow){
+  // 越高(分数越大)平台越稀疏
+  const diff = Math.min(scoreNow/2500, 1);
+  const base = 95 + diff*70;
+  return base + Math.random()*(55 + diff*45);
+}
+function pickType(gy){
+  const diff = Math.min(score/2200, 1);
+  const r = Math.random();
+  if(r < 0.10 + diff*0.22) return PT.MOVING;
+  if(r < 0.14 + diff*0.30) return PT.FRAGILE;
+  return PT.NORMAL;
+}
+function makePlatform(x, y, type){
+  const w = 78;
+  const p = { x, y, w, h:16, type, dead:false, broken:false };
+  if(type===PT.MOVING){
+    p.dir = Math.random()<0.5?-1:1;
+    p.spd = 60 + Math.random()*70;
+  }
+  // 弹簧:部分普通平台带弹簧
+  p.spring = (type!==PT.FRAGILE && Math.random()<0.16);
+  return p;
+}
+
+// 生成新平台(相机上移时在顶部补充)
+function spawnAbove(){
+  while(worldTop > cameraY - 60){
+    const gy = worldTop - rndGap(score);
+    const p = makePlatform(rndX(), gy, pickType(gy));
+    platforms.push(p);
+    worldTop = gy;
+  }
+}
+
+// =========================================================================
+//  粒子 / 反馈
+// =========================================================================
+function burst(x,y,color,n=12,spd=320){
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2;
+    const v = spd*(0.3+Math.random()*0.7);
+    particles.push({ x,y, vx:Math.cos(a)*v, vy:Math.sin(a)*v - 60,
+                     life:0.5+Math.random()*0.3, t:0, color, s:2+Math.random()*2.5 });
+  }
+}
+function shake(mag, dur){ shakeMag = Math.max(shakeMag, mag); shakeT = Math.max(shakeT, dur); }
+
+// =========================================================================
+//  AI 自动演示
+// =========================================================================
+const ai = { targetX: W/2 };
+function aiThink(){
+  // 找到玩家下方/即将落到的最近可落平台(玩家正在下落时)
+  // 选取在玩家下方、且 x 可达的、最近的平台作为对齐目标
+  let target = null, bestDy = Infinity;
+  for(const p of platforms){
+    if(p.dead) continue;
+    const dy = p.y - player.y;
+    // 目标平台应在玩家下方一点到下方较远范围内(准备去接)
+    if(dy > -40 && dy < H*0.9){
+      // 优先选更靠近玩家正下方且较高(dy 较小但为正附近)的
+      const score2 = Math.abs(dy - 120) + Math.abs(p.x - player.x)*0.15 - (p.spring?40:0);
+      if(score2 < bestDy){ bestDy = score2; target = p; }
+    }
+  }
+  if(target){
+    // 预测移动平台位置稍作提前
+    let tx = target.x;
+    if(target.type===PT.MOVING) tx += target.dir * 22;
+    ai.targetX = tx;
+  }
+}
+function aiControl(dt){
+  aiThink();
+  // 处理环绕:走最近方向
+  let dx = ai.targetX - player.x;
+  if(Math.abs(dx) > W/2){ dx -= Math.sign(dx)*W; } // 环绕更近
+  input.left  = dx < -6;
+  input.right = dx >  6;
+}
+
+// =========================================================================
+//  更新
+// =========================================================================
+function update(dt){
+  if(state !== State.PLAY) return;
+
+  if(DEMO) aiControl(dt);
+
+  // ---- 水平控制 ----
+  let ax = 0;
+  if(input.left)  ax -= MOVE_A;
+  if(input.right) ax += MOVE_A;
+  if(input.tilt)  ax += input.tilt * MOVE_A * 1.1;
+  player.vx += ax * dt;
+  if(ax===0) player.vx *= Math.pow(FRICTION, dt*60);
+  player.vx = Math.max(-MOVE_MAX, Math.min(MOVE_MAX, player.vx));
+  if(player.vx >  8) player.face = 1;
+  if(player.vx < -8) player.face = -1;
+  player.x += player.vx * dt;
+
+  // 左右环绕
+  if(player.x < -player.w/2) player.x += W + player.w;
+  if(player.x >  W + player.w/2) player.x -= W + player.w;
+
+  // ---- 垂直物理 ----
+  player.vy += GRAV * dt;
+  player.y  += player.vy * dt;
+
+  // ---- 平台移动更新 ----
+  for(const p of platforms){
+    if(p.type===PT.MOVING && !p.dead){
+      p.x += p.dir * p.spd * dt;
+      if(p.x < p.w/2){ p.x = p.w/2; p.dir = 1; }
+      if(p.x > W - p.w/2){ p.x = W - p.w/2; p.dir = -1; }
+    }
+  }
+
+  // ---- 落地检测(仅下落时)----
+  if(player.vy > 0){
+    const px = player.x, footPrev = player.y + player.h/2 - player.vy*dt, foot = player.y + player.h/2;
+    for(const p of platforms){
+      if(p.dead) continue;
+      const top = p.y;
+      // 脚从上方穿过平台顶面
+      if(foot >= top && footPrev <= top + 16 + Math.abs(player.vy*dt) &&
+         px > p.x - p.w/2 - 6 && px < p.x + p.w/2 + 6 &&
+         foot - top < 40){
+        // 命中
+        if(p.spring){
+          player.vy = SPRING_V;
+          Audio2.sfx.spring();
+          burst(p.x, p.y, '#ffd95e', 18, 420);
+          shake(7,0.18);
+        }else{
+          player.vy = JUMP_V;
+          Audio2.sfx.jump();
+          burst(p.x, p.y, '#5ef0ff', 8, 220);
+        }
+        player.squash = 1;
+        // 易碎平台踩后破碎
+        if(p.type===PT.FRAGILE){
+          p.dead = true; p.broken = true;
+          burst(p.x, p.y, '#ff2e88', 14, 280);
+        }
+        break;
+      }
+    }
+  }
+
+  // ---- 相机:随玩家上升上移(只上不下)----
+  const camTarget = player.y - H*0.6;
+  if(camTarget < cameraY) cameraY = camTarget; // 世界 y 越小越高
+  spawnAbove();
+
+  // ---- 计分(高度)----
+  if(player.y < highestY){
+    highestY = player.y;
+    score = Math.max(score, Math.floor((H*0.66 - highestY) / 5));
+    if(score % 100 < 5) {} // 占位
+  }
+  const shownScore = Math.max(score, Math.floor((H*0.66 - player.y) / 5));
+  if(shownScore > score){ score = shownScore; }
+  scoreTxt.textContent = score;
+
+  // 偶发得分音效(每跳到新高度的台阶)
+  // ---- 清理屏幕下方平台 ----
+  const cullY = cameraY + H + 120;
+  platforms = platforms.filter(p => p.y < cullY);
+
+  // ---- 粒子 ----
+  for(const pa of particles){
+    pa.t += dt;
+    pa.vy += 900*dt;
+    pa.x += pa.vx*dt; pa.y += pa.vy*dt;
+  }
+  particles = particles.filter(pa => pa.t < pa.life);
+
+  // ---- squash 衰减 ----
+  player.squash = Math.max(0, player.squash - dt*5);
+
+  // ---- 抖动衰减 ----
+  if(shakeT>0){ shakeT -= dt; if(shakeT<=0) shakeMag=0; }
+
+  // ---- 死亡:跌出屏幕底 ----
+  if(player.y - cameraY > H + 80){
+    gameOver();
+  }
+}
+
+// =========================================================================
+//  绘制
+// =========================================================================
+function draw(){
+  const sw = canvas.width, sh = canvas.height;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,sw,sh);
+  // 缩放到逻辑像素 + 抖动
+  let shx=0, shy=0;
+  if(shakeT>0){ shx=(Math.random()*2-1)*shakeMag; shy=(Math.random()*2-1)*shakeMag; }
+  ctx.setTransform(DPR,0,0,DPR, shx*DPR, shy*DPR);
+
+  drawBackground();
+  drawStars();
+  drawPlatforms();
+  drawParticles();
+  drawPlayer();
+}
+
+// 背景:日落渐变 + 太阳
+function drawBackground(){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0.00,'#160a36');
+  g.addColorStop(0.30,'#3a1457');
+  g.addColorStop(0.50,'#7a2a6e');
+  g.addColorStop(0.64,'#ff5e7e');
+  g.addColorStop(0.72,'#ff9a4d');
+  g.addColorStop(0.721,'#160a36');
+  g.addColorStop(1.00,'#160a36');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  // OutRun 太阳(固定在地平线附近,带横纹)
+  const sunY = H*0.62, sunR = Math.min(W*0.34,150);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(W/2, sunY, sunR, 0, Math.PI*2); ctx.clip();
+  const sg = ctx.createLinearGradient(0,sunY-sunR,0,sunY+sunR);
+  sg.addColorStop(0,'#ffe96b'); sg.addColorStop(0.5,'#ff7ad0'); sg.addColorStop(1,'#ff2e88');
+  ctx.fillStyle = sg; ctx.fillRect(W/2-sunR,sunY-sunR,sunR*2,sunR*2);
+  // 横向断纹
+  ctx.fillStyle = '#160a36';
+  for(let i=0;i<10;i++){
+    const yy = sunY + i*7;
+    ctx.fillRect(W/2-sunR, yy + i*2, sunR*2, Math.max(1, i*0.9));
+  }
+  ctx.restore();
+
+  // 地平线网格(向下滚动视差)
+  const horizon = H*0.72;
+  ctx.strokeStyle = 'rgba(94,240,255,0.18)';
+  ctx.lineWidth = 1;
+  const scroll = (cameraY*0.25) % 40;
+  ctx.beginPath();
+  for(let i=0;i<14;i++){
+    const yy = horizon + i*i*2.0 + scroll;
+    if(yy>H) break;
+    ctx.moveTo(0,yy); ctx.lineTo(W,yy);
+  }
+  // 透视竖线
+  for(let i=-7;i<=7;i++){
+    ctx.moveTo(W/2, horizon);
+    ctx.lineTo(W/2 + i*W*0.16, H);
+  }
+  ctx.stroke();
+}
+
+// 星空(视差,随相机下滚)
+function drawStars(){
+  const horizon = H*0.70;
+  for(const s of stars){
+    s.tw += 0.05;
+    // 视差:相机上移 -> 星星相对下滚
+    let yy = (s.y + cameraY*0.12*s.z);
+    yy = ((yy % horizon) + horizon) % horizon; // 仅在天空区域循环
+    const a = 0.4 + 0.6*Math.abs(Math.sin(s.tw));
+    ctx.fillStyle = `rgba(255,255,255,${a*0.9})`;
+    ctx.fillRect(s.x, yy, s.s, s.s);
+  }
+}
+
+// 平台
+function drawPlatforms(){
+  for(const p of platforms){
+    if(p.dead) continue;
+    const sy = p.y - cameraY;
+    if(sy < -30 || sy > H+30) continue;
+    const x = p.x - p.w/2;
+    let col, glow;
+    if(p.type===PT.MOVING){ col='#ff5ec8'; glow='#ff2e88'; }
+    else if(p.type===PT.FRAGILE){ col='#ffd95e'; glow='#ff9a4d'; }
+    else { col='#5ef0ff'; glow='#5effa0'; }
+
+    ctx.save();
+    ctx.shadowColor = glow; ctx.shadowBlur = 14;
+    // 硬投影
+    ctx.fillStyle = glow;
+    ctx.fillRect(x+3, sy+3, p.w, p.h);
+    // 主体
+    ctx.fillStyle = '#160a36';
+    ctx.fillRect(x, sy, p.w, p.h);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+    ctx.strokeRect(x, sy, p.w, p.h);
+    // 中线霓虹
+    ctx.fillStyle = col;
+    ctx.fillRect(x+4, sy+p.h/2-1, p.w-8, 2);
+    ctx.restore();
+
+    // 弹簧
+    if(p.spring){
+      ctx.save();
+      ctx.strokeStyle = '#ffd95e'; ctx.lineWidth=2.5;
+      ctx.shadowColor='#ffd95e'; ctx.shadowBlur=10;
+      const sx = p.x, sty = sy-10;
+      ctx.beginPath();
+      ctx.moveTo(sx-7, sy);
+      ctx.lineTo(sx-7, sty+4); ctx.lineTo(sx+7, sty+1);
+      ctx.lineTo(sx-7, sty-3); ctx.lineTo(sx+7, sty-6);
+      ctx.stroke();
+      ctx.fillStyle='#ff2e88';
+      ctx.fillRect(sx-9, sty-10, 18, 4);
+      ctx.restore();
+    }
+  }
+}
+
+function drawParticles(){
+  for(const pa of particles){
+    const sy = pa.y - cameraY;
+    const a = 1 - pa.t/pa.life;
+    ctx.globalAlpha = Math.max(0,a);
+    ctx.fillStyle = pa.color;
+    ctx.fillRect(pa.x - pa.s/2, sy - pa.s/2, pa.s, pa.s);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// 玩家:霓虹小生物
+function drawPlayer(){
+  const sy = player.y - cameraY;
+  const sq = player.squash;                 // 0..1
+  const w = player.w * (1 + sq*0.35);
+  const h = player.h * (1 - sq*0.3);
+  const x = player.x, y = sy;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(player.face, 1);
+
+  // 硬投影
+  ctx.fillStyle = '#ff2e88';
+  roundRect(-w/2+3, -h/2+3, w, h, 9); ctx.fill();
+
+  // 身体渐变
+  const bg = ctx.createLinearGradient(0,-h/2,0,h/2);
+  bg.addColorStop(0,'#5ef0ff'); bg.addColorStop(1,'#5effa0');
+  ctx.fillStyle = bg;
+  ctx.shadowColor='#5ef0ff'; ctx.shadowBlur=16;
+  roundRect(-w/2, -h/2, w, h, 9); ctx.fill();
+  ctx.shadowBlur=0;
+
+  // 边框
+  ctx.strokeStyle='#160a36'; ctx.lineWidth=2.5;
+  roundRect(-w/2, -h/2, w, h, 9); ctx.stroke();
+
+  // 眼睛
+  ctx.fillStyle='#160a36';
+  ctx.beginPath(); ctx.arc(w*0.12, -h*0.12, 4.2, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(w*0.16, -h*0.16, 1.5, 0, Math.PI*2); ctx.fill();
+  // 小腿(下落/上升)
+  ctx.fillStyle='#ff2e88';
+  ctx.fillRect(-w*0.28, h/2-3, 6, 6);
+  ctx.fillRect( w*0.16, h/2-3, 6, 6);
+
+  ctx.restore();
+}
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+// =========================================================================
+//  游戏流程
+// =========================================================================
+function startGame(){
+  Audio2.resume();
+  Audio2.startMusic();
+  Audio2.sfx.start();
+  startOv.classList.add('hidden');
+  overOv.classList.add('hidden');
+  resetGame();
+  state = State.PLAY;
+}
+
+function gameOver(){
+  if(state!==State.PLAY) return;
+  state = State.OVER;
+  Audio2.sfx.over();
+  shake(10,0.3);
+  if(score > best){
+    best = score;
+    localStorage.setItem('neonjump_best', String(best));
+  }
+  bestTxt.textContent = 'BEST ' + best;
+  goScore.textContent = score;
+  goBest.textContent  = 'BEST ' + best;
+  overOv.classList.remove('hidden');
+
+  // 演示模式:自动重开,保证整段录制有内容
+  if(DEMO){
+    setTimeout(()=>{ if(state===State.OVER) startGame(); }, 1100);
+  }
+}
+
+// =========================================================================
+//  输入绑定
+// =========================================================================
+// 键盘
+window.addEventListener('keydown', e=>{
+  if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') input.left=true;
+  if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') input.right=true;
+  if((e.key===' '||e.key==='Enter')){
+    if(state===State.READY) startGame();
+    else if(state===State.OVER) startGame();
+  }
+});
+window.addEventListener('keyup', e=>{
+  if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A') input.left=false;
+  if(e.key==='ArrowRight'||e.key==='d'||e.key==='D') input.right=false;
+});
+
+// 触屏:左右半屏
+function touchHandler(e){
+  if(state!==State.PLAY) return;
+  e.preventDefault();
+  input.left=false; input.right=false;
+  for(let i=0;i<e.touches.length;i++){
+    const t=e.touches[i];
+    const rect=canvas.getBoundingClientRect();
+    const tx = t.clientX - rect.left;
+    if(tx < rect.width/2) input.left=true; else input.right=true;
+  }
+}
+canvas.addEventListener('touchstart', touchHandler, {passive:false});
+canvas.addEventListener('touchmove',  touchHandler, {passive:false});
+canvas.addEventListener('touchend', e=>{
+  e.preventDefault();
+  if(e.touches.length===0){ input.left=false; input.right=false; }
+}, {passive:false});
+
+// 重力倾斜
+window.addEventListener('deviceorientation', e=>{
+  if(e.gamma==null) return;
+  input.tilt = Math.max(-1, Math.min(1, e.gamma/35));
+});
+
+// 按钮
+startBtn.addEventListener('click', startGame);
+retryBtn.addEventListener('click', startGame);
+muteBtn.addEventListener('click', ()=>{
+  const m = !Audio2.muted;
+  Audio2.setMuted(m);
+  muteBtn.textContent = m ? '♪ OFF' : '♪ ON';
+});
+
+// =========================================================================
+//  主循环
+// =========================================================================
+let last = performance.now();
+function loop(now){
+  let dt = (now - last)/1000;
+  last = now;
+  if(!(dt >= 0)) dt = 0;          // 防 NaN/负步长(首帧或时钟异常)
+  if(dt > 0.05) dt = 0.05;        // 限制最大步长(防卡顿穿透)
+  try{ update(dt); }catch(e){ console.error('update error', e); }
+  try{ draw(); }catch(e){ console.error('draw error', e); }
+  requestAnimationFrame(loop);    // 永不中断:单帧异常不影响后续渲染/重开
+}
+requestAnimationFrame(loop);
+
+// =========================================================================
+//  演示 / 录制 自启动
+// =========================================================================
+function beginDemo(){
+  // 免手势开局
+  Audio2.resume();
+  startGame();
+}
+function beginRecord(){
+  // 先进入演示
+  beginDemo();
+  // 录制主 canvas
+  try{
+    const cv = canvas;
+    const stream = cv.captureStream(30);
+    let mt='video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[]; mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{
+      const blob=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob); a.download='neon-jump.webm';
+      document.body.appendChild(a); try{a.click()}catch(e){}
+    };
+    mr.start(250);
+    setTimeout(()=>{ try{mr.stop()}catch(e){} }, RECORD_N*1000);
+  }catch(e){ /* 录制不可用则继续演示 */ }
+}
+
+if(RECORD_N>0){
+  // 确保 canvas 尺寸有效后再录制
+  resize();
+  setTimeout(beginRecord, 300);
+}else if(DEMO){
+  setTimeout(beginDemo, 200);
+}
+</script>
+</body>
+</html>

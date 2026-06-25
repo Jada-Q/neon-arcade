@@ -1,0 +1,14 @@
+{
+  "name": "3D 赛车竞速",
+  "short_name": "赛车竞速",
+  "description": "浏览器 3D 赛车:弯道、坡道、金币、氮气、双镜头预览、幽灵竞速",
+  "start_url": "./dodge-game.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#06060d",
+  "theme_color": "#06060d",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

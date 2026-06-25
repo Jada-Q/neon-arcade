@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>体素世界 · 挖与建</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet" />
+<style>
+  /* ===== 合成波 OutRun 配色 ===== */
+  :root{
+    --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8;
+    --gold:#ffd95e; --green:#5effa0;
+    --bg0:#1a0833; --bg1:#2a0a4a; --ink:#f5e9ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0d0420;}
+  body{
+    font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+    color:var(--ink); position:relative;
+    -webkit-user-select:none; user-select:none; touch-action:none;
+  }
+  #app{position:fixed;inset:0;}
+  canvas{display:block;}
+
+  /* CRT 扫描线极轻叠加 */
+  #scan{
+    pointer-events:none;position:fixed;inset:0;z-index:30;
+    background:repeating-linear-gradient(to bottom,
+      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0.10) 3px, rgba(0,0,0,0) 4px);
+    mix-blend-mode:multiply;opacity:.5;
+  }
+
+  /* ===== HUD ===== */
+  #hud{
+    position:fixed;top:0;left:0;right:0;z-index:20;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:12px 14px;pointer-events:none;
+    text-shadow:0 0 8px rgba(255,46,136,.6);
+  }
+  .panel{
+    background:linear-gradient(180deg,rgba(42,10,74,.78),rgba(26,8,51,.78));
+    border:2px solid var(--cyan);border-radius:8px;
+    box-shadow:0 0 14px rgba(94,240,255,.45),inset 0 0 10px rgba(94,240,255,.15);
+    padding:8px 12px;pointer-events:auto;
+  }
+  .lbl{font-family:'Press Start 2P';font-size:9px;color:var(--cyan);
+    letter-spacing:1px;}
+  .val{font-family:'Press Start 2P';font-size:16px;color:var(--gold);
+    margin-top:5px;text-shadow:0 0 10px rgba(255,217,94,.8);}
+  #hud .right{display:flex;gap:8px;align-items:flex-start;}
+  #goalP .val{color:var(--green);text-shadow:0 0 10px rgba(94,255,160,.8);font-size:12px;}
+  #muteBtn{
+    pointer-events:auto;cursor:pointer;font-family:'Press Start 2P';font-size:10px;
+    color:var(--magenta);background:rgba(26,8,51,.78);
+    border:2px solid var(--magenta);border-radius:8px;padding:10px 12px;
+    box-shadow:0 0 12px rgba(255,94,200,.4);
+  }
+  #muteBtn:active{transform:scale(.95);}
+
+  /* 准星 */
+  #cross{
+    position:fixed;left:50%;top:50%;z-index:15;transform:translate(-50%,-50%);
+    width:22px;height:22px;pointer-events:none;display:none;
+  }
+  #cross::before,#cross::after{content:"";position:absolute;background:var(--cyan);
+    box-shadow:0 0 6px var(--cyan);}
+  #cross::before{left:50%;top:0;width:2px;height:100%;transform:translateX(-50%);}
+  #cross::after{top:50%;left:0;height:2px;width:100%;transform:translateY(-50%);}
+
+  /* 调色板 */
+  #palette{
+    position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:20;
+    display:flex;gap:8px;padding:8px 10px;align-items:center;
+  }
+  .sw{width:30px;height:30px;border-radius:6px;border:2px solid rgba(255,255,255,.25);
+    box-shadow:0 0 8px currentColor;cursor:pointer;}
+  .sw.on{border-color:#fff;transform:scale(1.18);box-shadow:0 0 16px currentColor;}
+
+  /* ===== 遮罩 ===== */
+  .mask{
+    position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:24px;
+    background:radial-gradient(ellipse at 50% 30%,rgba(42,10,74,.86),rgba(13,4,32,.96));
+    backdrop-filter:blur(2px);
+  }
+  .title{font-family:'Press Start 2P';font-size:clamp(18px,5vw,40px);line-height:1.5;
+    color:var(--pink);text-shadow:0 0 16px var(--pink),0 0 36px var(--magenta);
+    margin-bottom:14px;}
+  .sub{font-family:'Press Start 2P';font-size:11px;color:var(--cyan);
+    text-shadow:0 0 10px var(--cyan);margin-bottom:18px;}
+  .desc{max-width:560px;font-size:15px;line-height:1.85;color:var(--ink);margin-bottom:22px;}
+  .desc b{color:var(--gold);}
+  .modes{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:8px;}
+  .btn{
+    font-family:'Press Start 2P';font-size:12px;color:#1a0833;cursor:pointer;
+    background:linear-gradient(180deg,var(--gold),#ffae2e);
+    border:none;border-radius:10px;padding:16px 22px;
+    box-shadow:0 0 18px rgba(255,217,94,.7);transition:transform .08s;
+  }
+  .btn.alt{background:linear-gradient(180deg,var(--green),#2ec98a);
+    box-shadow:0 0 18px rgba(94,255,160,.7);}
+  .btn:active{transform:scale(.95);}
+  .small{font-size:12px;color:var(--magenta);margin-top:16px;opacity:.9;}
+  #endMask{display:none;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="scan"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div class="panel" id="scoreP">
+    <div class="lbl">SCORE</div><div class="val" id="scoreV">0</div>
+  </div>
+  <div class="right">
+    <div class="panel" id="goalP">
+      <div class="lbl" id="goalL">GOAL</div><div class="val" id="goalV">-</div>
+    </div>
+    <div class="panel" id="bestP">
+      <div class="lbl">BEST</div><div class="val" id="bestV">0</div>
+    </div>
+    <button id="muteBtn">♪ ON</button>
+  </div>
+</div>
+
+<div id="cross"></div>
+<div id="palette" class="hidden"></div>
+
+<!-- 开始遮罩 -->
+<div id="startMask" class="mask">
+  <div class="title">体素世界<br/>挖 与 建</div>
+  <div class="sub">NEON&nbsp;VOXEL&nbsp;·&nbsp;DIG&nbsp;&amp;&nbsp;BUILD</div>
+  <div class="desc">
+    旋转的霓虹方块世界。<b>左键/点击</b>挖掉方块,<b>右键/长按</b>在选中面放置新方块。<br/>
+    电脑:<b>拖拽旋转</b>视角,<b>滚轮缩放</b>。触屏:<b>单指拖拽转</b>、<b>点击</b>挖、<b>长按</b>放。<br/>
+    选一个目标开始游戏。
+  </div>
+  <div class="modes">
+    <button class="btn" id="btnMine">⛏ 采矿模式<br/><span style="font-size:9px">挖出发光矿石计分</span></button>
+    <button class="btn alt" id="btnTower">🗼 建塔模式<br/><span style="font-size:9px">限步堆出指定高度</span></button>
+  </div>
+  <div class="small">数字键 1-5 切换放置颜色 · 鼠标手势随时可用</div>
+</div>
+
+<!-- 结束遮罩 -->
+<div id="endMask" class="mask">
+  <div class="title" id="endTitle">结束</div>
+  <div class="sub" id="endSub">SCORE</div>
+  <div class="desc" id="endDesc"></div>
+  <div class="modes">
+    <button class="btn" id="btnAgain">↻ 再来一局</button>
+  </div>
+  <div class="small">回到目标选择</div>
+</div>
+
+<!-- Three.js importmap -->
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   体素世界 · 挖与建  (合成波 OutRun)
+   - InstancedMesh 高效渲染大量霓虹体素
+   - Raycaster 射线拾取选中面 → 挖/建
+   - 模式:采矿(挖矿石计分) / 建塔(限步堆高度)
+   - ?demo 自动演示 ; ?record=N 录制 webm
+   ============================================================ */
+
+// ---------- 颜色常量 ----------
+const COL = {
+  pink:0xff2e88, cyan:0x5ef0ff, magenta:0xff5ec8, gold:0xffd95e, green:0x5effa0
+};
+// 玩家放置可循环的霓虹颜色
+const PLACE_COLORS = [COL.pink, COL.cyan, COL.magenta, COL.gold, COL.green];
+const GROUND = 0x6a3bb0;     // 地表泥土(暗紫)
+const STONE  = 0x39235e;     // 地下石头
+const ORE    = 0xffe27a;     // 矿石(发光金)
+
+// ---------- 全局状态 ----------
+const params = new URLSearchParams(location.search);
+const DEMO = params.has('demo') || params.has('record');
+const RECORD_SEC = params.has('record') ? Math.max(1, parseInt(params.get('record')||'20',10)) : 0;
+
+const W=24, H=14, D=24;       // 世界尺寸(x,y,z)
+const HALF = W/2;
+const MAXV = W*H*D;           // 实例上限
+
+let scene, camera, renderer, raycaster;
+let inst;                      // InstancedMesh
+let pickInst;                  // 用于拾取的镜像实例(同矩阵,不发光,便于 raycast)
+let highlightMesh;             // 选中高亮框
+let ghostMesh;                 // 放置预览
+let clock;
+let running=false, mode=null;  // 'mine' | 'tower'
+let score=0, best=0;
+let goalTarget=0, goalProgress=0;
+let movesLeft=0;               // 建塔模式操作数
+let oreTotal=0, oreFound=0;
+let placeColorIdx=0;
+let timeLeft=0;                // 采矿模式倒计时
+
+// 体素数据:Map key="x,y,z" -> {id(instance index), type, color}
+const voxels = new Map();
+const key=(x,y,z)=>x+','+y+','+z;
+
+// 实例池管理
+let freeIds=[];                // 可复用的实例槽
+let liveCount=0;               // 当前活动实例数(用于 setCount 优化)
+const dummy = new THREE.Object3D();
+const tmpColor = new THREE.Color();
+
+// 相机轨道控制(自写,避免额外依赖)
+let camYaw=0.7, camPitch=0.62, camDist=34, camTarget=new THREE.Vector3(0,2,0);
+let dragging=false, lastX=0, lastY=0, dragMoved=0;
+let pressTimer=null, pressedForPlace=false;
+const pointer = new THREE.Vector2(0,0); // -1..1
+
+// ---------- 音频(Web Audio 程序化) ----------
+const Audio = (()=>{
+  let ctx=null, master=null, musicGain=null, muted=false, started=false;
+  let musicTimer=null, step=0;
+  function ensure(){
+    if(ctx) return;
+    try{
+      ctx = new (window.AudioContext||window.webkitAudioContext)();
+      master = ctx.createGain(); master.gain.value=0.35; master.connect(ctx.destination);
+      musicGain = ctx.createGain(); musicGain.gain.value=0.16; musicGain.connect(master);
+    }catch(e){ console.warn('audio init', e); }
+  }
+  function resume(){ ensure(); if(ctx && ctx.state==='suspended') ctx.resume(); }
+  function blip(freq,dur,type,gain,when){
+    if(!ctx||muted) return;
+    const t=(when||ctx.currentTime);
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=type||'square'; o.frequency.setValueAtTime(freq,t);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(gain||0.3,t+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+0.02);
+  }
+  function dig(){ blip(180,0.12,'square',0.32); blip(120,0.16,'sawtooth',0.18); }
+  function place(){ blip(420,0.10,'square',0.28); blip(640,0.08,'triangle',0.2,(ctx?ctx.currentTime+0.04:0)); }
+  function ore(){ // 上行琶音
+    if(!ctx) return; const t=ctx.currentTime;
+    [523,659,784,1047].forEach((f,i)=>blip(f,0.18,'triangle',0.34,t+i*0.06));
+  }
+  function win(){ if(!ctx) return; const t=ctx.currentTime;
+    [523,659,784,1047,1319].forEach((f,i)=>blip(f,0.3,'square',0.32,t+i*0.09)); }
+  function lose(){ if(!ctx) return; const t=ctx.currentTime;
+    [392,330,262,196].forEach((f,i)=>blip(f,0.28,'sawtooth',0.3,t+i*0.12)); }
+  // 合成波 bass+arp 循环
+  const bass=[0,0,3,3,5,5,3,-2];
+  const arp=[12,15,19,24];
+  function startMusic(){
+    if(musicTimer||muted) return;
+    const tick=()=>{
+      if(!ctx||muted) return;
+      const root=110; // A2
+      const b=bass[step%bass.length];
+      blip(root*Math.pow(2,b/12),0.42,'sawtooth',0.10);
+      const a=arp[step%arp.length];
+      blip(root*Math.pow(2,a/12),0.18,'triangle',0.06);
+      if(step%2===0) blip(root*2,0.10,'square',0.04);
+      step++;
+    };
+    musicTimer=setInterval(tick,260);
+  }
+  function stopMusic(){ if(musicTimer){clearInterval(musicTimer);musicTimer=null;} }
+  function toggle(){ muted=!muted; if(muted){ if(master)master.gain.value=0; } else { resume(); if(master)master.gain.value=0.35; } return muted; }
+  return {resume,dig,place,ore,win,lose,startMusic,stopMusic,toggle,isMuted:()=>muted};
+})();
+
+// ============================================================
+//  Three.js 初始化
+// ============================================================
+function initThree(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x140828);
+  scene.fog = new THREE.FogExp2(0x140828, 0.018);
+
+  const app=document.getElementById('app');
+  camera = new THREE.PerspectiveCamera(55, app.clientWidth/app.clientHeight, 0.1, 400);
+
+  renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.setSize(app.clientWidth, app.clientHeight);
+  app.appendChild(renderer.domElement);
+
+  // 灯光:合成波环境 + 两盏点光
+  scene.add(new THREE.AmbientLight(0x4a2a7a, 1.1));
+  const p1=new THREE.PointLight(COL.pink, 1.2, 200); p1.position.set(-20,30,10); scene.add(p1);
+  const p2=new THREE.PointLight(COL.cyan, 1.1, 200); p2.position.set(20,25,-15); scene.add(p2);
+  const d=new THREE.DirectionalLight(0xffffff,0.4); d.position.set(5,20,8); scene.add(d);
+
+  // 地平线日落渐变(大平面背景)
+  addSunsetBackdrop();
+  addGridFloor();
+
+  // InstancedMesh:体素
+  const geo = new THREE.BoxGeometry(1,1,1);
+  const mat = new THREE.MeshStandardMaterial({
+    roughness:0.35, metalness:0.15, emissiveIntensity:1.0, vertexColors:true
+  });
+  // 用 instanceColor 着色,emissive 由颜色驱动
+  mat.emissive = new THREE.Color(0xffffff);
+  mat.onBeforeCompile = (sh)=>{
+    // 让 emissive 跟随 instanceColor(让方块自发光,霓虹感)
+    sh.fragmentShader = sh.fragmentShader.replace(
+      'vec3 totalEmissiveRadiance = emissive;',
+      'vec3 totalEmissiveRadiance = vColor * 0.55;'
+    );
+  };
+  inst = new THREE.InstancedMesh(geo, mat, MAXV);
+  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  inst.count = 0;
+  // 启用 instanceColor
+  inst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAXV*3), 3);
+  inst.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  scene.add(inst);
+
+  // 高亮选中框
+  const hgeo=new THREE.BoxGeometry(1.04,1.04,1.04);
+  const hmat=new THREE.MeshBasicMaterial({color:COL.cyan, wireframe:true, transparent:true, opacity:0.9});
+  highlightMesh=new THREE.Mesh(hgeo,hmat); highlightMesh.visible=false; scene.add(highlightMesh);
+
+  // 放置预览(半透明)
+  const ggeo=new THREE.BoxGeometry(1,1,1);
+  const gmat=new THREE.MeshBasicMaterial({color:COL.green, transparent:true, opacity:0.35, depthWrite:false});
+  ghostMesh=new THREE.Mesh(ggeo,gmat); ghostMesh.visible=false; scene.add(ghostMesh);
+
+  raycaster = new THREE.Raycaster();
+  clock = new THREE.Clock();
+}
+
+function addSunsetBackdrop(){
+  // 用一个反向球面 + canvas 纹理做日落天空
+  const c=document.createElement('canvas'); c.width=2; c.height=256;
+  const g=c.getContext('2d');
+  const grad=g.createLinearGradient(0,0,0,256);
+  grad.addColorStop(0.0,'#1a0833');
+  grad.addColorStop(0.45,'#3a0a4a');
+  grad.addColorStop(0.62,'#7a1a6a');
+  grad.addColorStop(0.72,'#ff2e88');
+  grad.addColorStop(0.80,'#ff8a3d');
+  grad.addColorStop(0.88,'#ffd95e');
+  grad.addColorStop(1.0,'#2a0a4a');
+  g.fillStyle=grad; g.fillRect(0,0,2,256);
+  const tex=new THREE.CanvasTexture(c);
+  const sky=new THREE.Mesh(
+    new THREE.SphereGeometry(200,32,16),
+    new THREE.MeshBasicMaterial({map:tex, side:THREE.BackSide, fog:false})
+  );
+  scene.add(sky);
+}
+
+function addGridFloor(){
+  // 霓虹网格地面(在体素地形之下,营造无限延伸感)
+  const grid=new THREE.GridHelper(300, 60, COL.magenta, 0x33205a);
+  grid.position.y=-0.51;
+  grid.material.transparent=true; grid.material.opacity=0.5;
+  scene.add(grid);
+}
+
+// ============================================================
+//  体素管理
+// ============================================================
+function addVoxel(x,y,z,type,color){
+  const k=key(x,y,z);
+  if(voxels.has(k)) return;
+  let id;
+  if(freeIds.length>0){ id=freeIds.pop(); }
+  else { id=liveCount; }
+  if(id>=MAXV) return;
+  voxels.set(k,{id,type,color,x,y,z});
+  dummy.position.set(x-HALF+0.5, y+0.5, z-HALF+0.5);
+  dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
+  dummy.updateMatrix();
+  inst.setMatrixAt(id, dummy.matrix);
+  tmpColor.setHex(color);
+  inst.setColorAt(id, tmpColor);
+  if(id>=liveCount) liveCount=id+1;
+  inst.count = liveCount;
+  inst.instanceMatrix.needsUpdate=true;
+  if(inst.instanceColor) inst.instanceColor.needsUpdate=true;
+}
+
+function removeVoxel(x,y,z){
+  const k=key(x,y,z);
+  const v=voxels.get(k);
+  if(!v) return null;
+  // 把该实例缩到 0(隐藏),槽位回收
+  dummy.position.set(0,-9999,0); dummy.scale.set(0.0001,0.0001,0.0001);
+  dummy.updateMatrix();
+  inst.setMatrixAt(v.id, dummy.matrix);
+  inst.instanceMatrix.needsUpdate=true;
+  freeIds.push(v.id);
+  voxels.delete(k);
+  return v;
+}
+
+// 重置/生成世界
+function buildWorld(){
+  // 清空
+  voxels.clear(); freeIds.length=0; liveCount=0; inst.count=0;
+  oreTotal=0; oreFound=0;
+
+  // 地形高度场(柏林风格的简单噪声)
+  const surf=[];
+  for(let x=0;x<W;x++){ surf[x]=[]; for(let z=0;z<D;z++){
+    const nx=x/W-0.5, nz=z/D-0.5;
+    let h = 4
+      + Math.sin(x*0.45)*1.3 + Math.cos(z*0.4)*1.2
+      + Math.sin((x+z)*0.28)*1.4
+      - (nx*nx+nz*nz)*6;
+    h = Math.max(2, Math.min(H-3, Math.round(h+3)));
+    surf[x][z]=h;
+  }}
+
+  for(let x=0;x<W;x++) for(let z=0;z<D;z++){
+    const top=surf[x][z];
+    for(let y=0;y<=top;y++){
+      let type='stone', color=STONE;
+      if(y===top){ type='ground'; color=GROUND; }
+      else if(y>top-2){ type='dirt'; color=0x4a2a7a; }
+      // 矿石散布在地下深处
+      if(y<top-1 && y>=1){
+        if(Math.random()<0.045){ type='ore'; color=ORE; oreTotal++; }
+      }
+      addVoxel(x,y,z,type,color);
+    }
+  }
+  // 保证至少有一些矿石
+  if(oreTotal<8){
+    let tries=0;
+    while(oreTotal<10 && tries<400){
+      tries++;
+      const x=(Math.random()*W)|0, z=(Math.random()*D)|0;
+      const top=surf[x][z]; const y=1+((Math.random()*(top-2))|0);
+      const k=key(x,y,z); const v=voxels.get(k);
+      if(v && v.type!=='ore'){ v.type='ore'; v.color=ORE; tmpColor.setHex(ORE); inst.setColorAt(v.id,tmpColor); oreTotal++; }
+    }
+    inst.instanceColor.needsUpdate=true;
+  }
+  camTarget.set(0,2,0);
+}
+
+// ============================================================
+//  相机
+// ============================================================
+function updateCamera(){
+  camPitch=Math.max(0.12, Math.min(1.45, camPitch));
+  camDist=Math.max(14, Math.min(70, camDist));
+  const cp=Math.cos(camPitch), sp=Math.sin(camPitch);
+  const cy=Math.cos(camYaw), sy=Math.sin(camYaw);
+  camera.position.set(
+    camTarget.x + camDist*cp*sy,
+    camTarget.y + camDist*sp,
+    camTarget.z + camDist*cp*cy
+  );
+  camera.lookAt(camTarget);
+}
+
+// ============================================================
+//  射线拾取
+// ============================================================
+function pick(){
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObject(inst, false);
+  if(hits.length===0) return null;
+  const h=hits[0];
+  const iid=h.instanceId;
+  if(iid===undefined) return null;
+  // 反查体素坐标:从矩阵取位置
+  const m=new THREE.Matrix4(); inst.getMatrixAt(iid,m);
+  const pos=new THREE.Vector3().setFromMatrixPosition(m);
+  const vx=Math.round(pos.x+HALF-0.5), vy=Math.round(pos.y-0.5), vz=Math.round(pos.z+HALF-0.5);
+  const v=voxels.get(key(vx,vy,vz));
+  if(!v) return null;
+  // 计算放置位置:法线方向
+  const n=h.face ? h.face.normal.clone() : new THREE.Vector3(0,1,0);
+  // face.normal 在物体局部空间,Box 无旋转直接用
+  const px=vx+Math.round(n.x), py=vy+Math.round(n.y), pz=vz+Math.round(n.z);
+  return {v, vx,vy,vz, px,py,pz, point:h.point};
+}
+
+let currentPick=null;
+function updateHighlight(){
+  // demo 模式时由 AI 控制,不依赖鼠标
+  if(DEMO && running){ highlightMesh.visible=false; ghostMesh.visible=false; return; }
+  const p=pick();
+  currentPick=p;
+  if(!p){ highlightMesh.visible=false; ghostMesh.visible=false; return; }
+  highlightMesh.position.set(p.vx-HALF+0.5, p.vy+0.5, p.vz-HALF+0.5);
+  highlightMesh.visible=true;
+  // 放置预览
+  if(p.py>=0 && p.py<H && !voxels.has(key(p.px,p.py,p.pz))){
+    ghostMesh.position.set(p.px-HALF+0.5, p.py+0.5, p.pz-HALF+0.5);
+    ghostMesh.material.color.setHex(PLACE_COLORS[placeColorIdx]);
+    ghostMesh.visible=true;
+  } else ghostMesh.visible=false;
+}
+
+// ============================================================
+//  挖 / 建 动作
+// ============================================================
+function doDig(p){
+  if(!p || !running) return;
+  const v=p.v;
+  const removed=removeVoxel(p.vx,p.vy,p.vz);
+  if(!removed) return;
+  spawnParticles(p.vx,p.vy,p.vz, removed.color);
+  if(removed.type==='ore'){
+    oreFound++; score+=100; goalProgress=oreFound;
+    Audio.ore(); flash(COL.gold);
+    bump();
+  } else {
+    score+=2; Audio.dig();
+  }
+  if(mode==='tower'){ movesLeft--; }
+  updateHUD();
+  checkGoal();
+}
+
+function doPlace(p){
+  if(!p || !running) return;
+  if(p.py<0 || p.py>=H) return;
+  if(voxels.has(key(p.px,p.py,p.pz))) return;
+  const color=PLACE_COLORS[placeColorIdx];
+  addVoxel(p.px,p.py,p.pz,'placed',color);
+  spawnParticles(p.px,p.py,p.pz,color);
+  Audio.place();
+  if(mode==='tower'){ movesLeft--; }
+  if(mode==='mine'){ score+=1; }
+  // 颜色循环
+  placeColorIdx=(placeColorIdx+1)%PLACE_COLORS.length;
+  syncPalette();
+  updateHUD();
+  checkGoal();
+}
+
+// ============================================================
+//  目标判定
+// ============================================================
+function checkGoal(){
+  if(!running) return;
+  if(mode==='mine'){
+    if(oreFound>=goalTarget){ endGame(true); return; }
+    if(movesLeft!==Infinity){}
+  } else if(mode==='tower'){
+    // 计算最高塔(任意 x,z 列连续从某基底向上的最高 y),这里简单取全局最高已放置/任意方块顶
+    const th=towerHeight();
+    goalProgress=th;
+    if(th>=goalTarget){ endGame(true); return; }
+    if(movesLeft<=0){ endGame(false); return; }
+  }
+}
+
+function towerHeight(){
+  // 找出最高列高度(连续方块)
+  let maxTop=0;
+  // 统计每个 (x,z) 的最高方块 y
+  for(const v of voxels.values()){
+    if(v.y+1>maxTop) maxTop=v.y+1;
+  }
+  return maxTop;
+}
+
+// ============================================================
+//  粒子 / 反馈
+// ============================================================
+let particles=[];
+let pSystem=null;
+function initParticles(){
+  const g=new THREE.BufferGeometry();
+  const N=600;
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N*3),3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N*3),3));
+  const m=new THREE.PointsMaterial({size:0.35, vertexColors:true, transparent:true, opacity:0.95, depthWrite:false, blending:THREE.AdditiveBlending});
+  pSystem=new THREE.Points(g,m); scene.add(pSystem);
+  for(let i=0;i<N;i++) particles.push({life:0,x:0,y:0,z:0,vx:0,vy:0,vz:0,r:0,gg:0,b:0});
+}
+function spawnParticles(vx,vy,vz,color){
+  tmpColor.setHex(color);
+  let spawned=0;
+  for(const p of particles){
+    if(p.life<=0){
+      p.life=0.6+Math.random()*0.4;
+      p.x=vx-HALF+0.5; p.y=vy+0.5; p.z=vz-HALF+0.5;
+      p.vx=(Math.random()-0.5)*6; p.vy=Math.random()*5+1; p.vz=(Math.random()-0.5)*6;
+      p.r=tmpColor.r; p.gg=tmpColor.g; p.b=tmpColor.b;
+      if(++spawned>=14) break;
+    }
+  }
+}
+function updateParticles(dt){
+  const pos=pSystem.geometry.attributes.position.array;
+  const col=pSystem.geometry.attributes.color.array;
+  let i=0;
+  for(const p of particles){
+    if(p.life>0){
+      p.life-=dt; p.vy-=12*dt;
+      p.x+=p.vx*dt; p.y+=p.vy*dt; p.z+=p.vz*dt;
+      pos[i*3]=p.x; pos[i*3+1]=p.y; pos[i*3+2]=p.z;
+      const a=Math.max(0,p.life);
+      col[i*3]=p.r*a; col[i*3+1]=p.gg*a; col[i*3+2]=p.b*a;
+    } else {
+      pos[i*3+1]=-9999;
+    }
+    i++;
+  }
+  pSystem.geometry.attributes.position.needsUpdate=true;
+  pSystem.geometry.attributes.color.needsUpdate=true;
+}
+
+let flashT=0, flashColor=new THREE.Color(COL.gold);
+function flash(c){ flashT=0.4; flashColor.setHex(c); }
+let bumpT=0;
+function bump(){ bumpT=0.25; }
+
+// ============================================================
+//  HUD / 调色板
+// ============================================================
+function updateHUD(){
+  document.getElementById('scoreV').textContent=score;
+  document.getElementById('bestV').textContent=best;
+  const gv=document.getElementById('goalV');
+  const gl=document.getElementById('goalL');
+  if(mode==='mine'){
+    gl.textContent='矿石 '+(timeLeft>0?('· '+Math.ceil(timeLeft)+'s'):'');
+    gv.textContent=oreFound+' / '+goalTarget;
+  } else if(mode==='tower'){
+    gl.textContent='塔高 · 剩 '+Math.max(0,movesLeft)+' 步';
+    gv.textContent=towerHeight()+' / '+goalTarget;
+  }
+}
+function buildPalette(){
+  const pal=document.getElementById('palette');
+  pal.innerHTML='';
+  PLACE_COLORS.forEach((c,i)=>{
+    const d=document.createElement('div');
+    d.className='sw'+(i===placeColorIdx?' on':'');
+    d.style.background='#'+c.toString(16).padStart(6,'0');
+    d.style.color='#'+c.toString(16).padStart(6,'0');
+    d.onclick=()=>{ placeColorIdx=i; syncPalette(); };
+    pal.appendChild(d);
+  });
+}
+function syncPalette(){
+  const pal=document.getElementById('palette');
+  [...pal.children].forEach((d,i)=>d.classList.toggle('on',i===placeColorIdx));
+}
+
+// ============================================================
+//  游戏流程
+// ============================================================
+function startGame(m){
+  mode=m; score=0; oreFound=0; goalProgress=0; placeColorIdx=0;
+  buildWorld();
+  best = parseInt(localStorage.getItem('neonVoxelBest_'+m)||'0',10)||0;
+  if(m==='mine'){
+    goalTarget=Math.min(oreTotal, 8);
+    timeLeft = 75;       // 采矿限时
+    movesLeft=Infinity;
+  } else {
+    goalTarget=12;       // 目标塔高
+    movesLeft=40;        // 限定操作数
+    timeLeft=0;
+  }
+  running=true;
+  document.getElementById('startMask').classList.add('hidden');
+  document.getElementById('endMask').style.display='none';
+  document.getElementById('hud').classList.remove('hidden');
+  document.getElementById('palette').classList.remove('hidden');
+  document.getElementById('cross').style.display = DEMO ? 'none':'';
+  buildPalette(); updateHUD();
+  Audio.resume(); Audio.startMusic();
+  // demo AI 重置
+  ai.reset();
+}
+
+function endGame(won){
+  if(!running) return;
+  running=false;
+  Audio.stopMusic();
+  if(won) Audio.win(); else Audio.lose();
+  if(score>best){ best=score; localStorage.setItem('neonVoxelBest_'+mode, best); }
+  const em=document.getElementById('endMask');
+  document.getElementById('endTitle').textContent = won? '目标达成!':'游戏结束';
+  document.getElementById('endTitle').style.color = won? 'var(--green)':'var(--pink)';
+  document.getElementById('endSub').textContent='SCORE '+score+'  ·  BEST '+best;
+  let d='';
+  if(mode==='mine') d= won? `你挖出了全部 <b>${goalTarget}</b> 块发光矿石!`
+                          : `时间到。已采集 <b>${oreFound}/${goalTarget}</b> 矿石。`;
+  else d= won? `成功堆出 <b>${towerHeight()}</b> 高的霓虹塔!`
+             : `操作用尽。塔高 <b>${towerHeight()}/${goalTarget}</b>。`;
+  document.getElementById('endDesc').innerHTML=d;
+  em.style.display='flex';
+  // demo 自动重开
+  if(DEMO){
+    setTimeout(()=>{ if(!running){ startGame(Math.random()<0.5?'mine':'tower'); } }, 2600);
+  }
+}
+
+// ============================================================
+//  自动演示 AI
+// ============================================================
+const ai = (()=>{
+  let t=0, actT=0, target=null, phase='seek';
+  let buildSpot=null, buildBaseY=0;
+  function reset(){ t=0; actT=0; target=null; phase='seek'; buildSpot=null; }
+  // 找最近的矿石
+  function nearestOre(){
+    let bestV=null, bestD=1e9;
+    const cx=camTarget.x+HALF, cz=camTarget.z+HALF;
+    for(const v of voxels.values()){
+      if(v.type==='ore'){
+        const d=(v.x-cx)**2+(v.z-cz)**2+(v.y-6)**2*0.3;
+        if(d<bestD){bestD=d;bestV=v;}
+      }
+    }
+    return bestV;
+  }
+  // 找某矿石上方可挖的最高方块(逐层往下挖)
+  function topAt(x,z){
+    let top=-1;
+    for(const v of voxels.values()){ if(v.x===x&&v.z===z&&v.y>top) top=v.y; }
+    return top;
+  }
+  function update(dt){
+    if(!running) return;
+    // 缓慢自动旋转视角,展示
+    camYaw += dt*0.25;
+    actT-=dt;
+    if(actT>0) return;
+    actT=0.18; // 动作节奏
+
+    if(mode==='mine'){
+      // 朝目标矿石垂直向下挖
+      if(!target || !voxels.has(key(target.x,target.y,target.z))){
+        target=nearestOre();
+      }
+      if(!target){ return; }
+      // 把相机对准目标列
+      const wx=target.x-HALF+0.5, wz=target.z-HALF+0.5;
+      camTarget.x += (wx-camTarget.x)*0.12;
+      camTarget.z += (wz-camTarget.z)*0.12;
+      // 挖该列最高方块,直到露出矿石
+      const tp=topAt(target.x,target.z);
+      if(tp<0) { target=null; return; }
+      const v=voxels.get(key(target.x,tp,target.z));
+      if(v){
+        const removed=removeVoxel(target.x,tp,target.z);
+        if(!removed){ target=null; return; }
+        spawnParticles(target.x,tp,target.z,removed.color);
+        if(removed.type==='ore'){ oreFound++; score+=100; Audio.ore(); flash(COL.gold); bump(); target=null; }
+        else { score+=2; Audio.dig(); }
+        updateHUD(); checkGoal();
+      }
+    } else { // tower:挑一个列堆高
+      if(!buildSpot){
+        // 选中心附近一根列
+        const x=(W/2 + ((Math.random()*4)|0)-2)|0;
+        const z=(D/2 + ((Math.random()*4)|0)-2)|0;
+        buildSpot={x,z};
+      }
+      const {x,z}=buildSpot;
+      camTarget.x += ((x-HALF+0.5)-camTarget.x)*0.1;
+      camTarget.z += ((z-HALF+0.5)-camTarget.z)*0.1;
+      const tp=topAt(x,z);
+      const ny=tp+1;
+      if(ny<H && !voxels.has(key(x,ny,z))){
+        addVoxel(x,ny,z,'placed',PLACE_COLORS[placeColorIdx]);
+        spawnParticles(x,ny,z,PLACE_COLORS[placeColorIdx]);
+        Audio.place();
+        placeColorIdx=(placeColorIdx+1)%PLACE_COLORS.length; syncPalette();
+        movesLeft--;
+        updateHUD(); checkGoal();
+      } else { buildSpot=null; }
+    }
+  }
+  return {reset,update};
+})();
+
+// ============================================================
+//  输入
+// ============================================================
+function setPointerFromEvent(e){
+  const r=renderer.domElement.getBoundingClientRect();
+  const cx=(e.touches?e.touches[0].clientX:e.clientX);
+  const cy=(e.touches?e.touches[0].clientY:e.clientY);
+  pointer.x=((cx-r.left)/r.width)*2-1;
+  pointer.y=-((cy-r.top)/r.height)*2+1;
+}
+
+function onDown(e){
+  Audio.resume();
+  if(!running) return;
+  if(e.button===2) { /* 右键放置,后面处理 */ }
+  dragging=true; dragMoved=0;
+  lastX=(e.touches?e.touches[0].clientX:e.clientX);
+  lastY=(e.touches?e.touches[0].clientY:e.clientY);
+  setPointerFromEvent(e);
+  pressedForPlace=false;
+  // 触屏长按 = 放置
+  if(e.touches){
+    pressTimer=setTimeout(()=>{
+      pressedForPlace=true;
+      updateHighlight();
+      if(currentPick) doPlace(currentPick);
+    }, 360);
+  }
+}
+function onMove(e){
+  const cx=(e.touches?e.touches[0].clientX:e.clientX);
+  const cy=(e.touches?e.touches[0].clientY:e.clientY);
+  if(dragging){
+    const dx=cx-lastX, dy=cy-lastY;
+    dragMoved+=Math.abs(dx)+Math.abs(dy);
+    camYaw -= dx*0.006;
+    camPitch += dy*0.006;
+    lastX=cx; lastY=cy;
+    if(dragMoved>10 && pressTimer){ clearTimeout(pressTimer); pressTimer=null; } // 拖动取消长按
+  }
+  setPointerFromEvent(e);
+}
+function onUp(e){
+  if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; }
+  const wasDrag = dragMoved>10;
+  dragging=false;
+  if(!running){ return; }
+  if(pressedForPlace){ pressedForPlace=false; return; } // 已经长按放置过
+  if(wasDrag) return; // 拖动旋转,不算点击
+  // 鼠标:左键挖,右键放
+  setPointerFromEvent(e);
+  updateHighlight();
+  if(!currentPick) return;
+  if(e.button===2){ doPlace(currentPick); }
+  else { doDig(currentPick); }
+}
+
+function bindInput(){
+  const el=renderer.domElement;
+  el.addEventListener('mousedown',onDown);
+  window.addEventListener('mousemove',onMove);
+  window.addEventListener('mouseup',onUp);
+  el.addEventListener('contextmenu',e=>e.preventDefault());
+  el.addEventListener('wheel',e=>{ camDist+=e.deltaY*0.02; e.preventDefault(); },{passive:false});
+  el.addEventListener('touchstart',e=>{e.preventDefault();onDown(e);},{passive:false});
+  el.addEventListener('touchmove',e=>{e.preventDefault();onMove(e);},{passive:false});
+  el.addEventListener('touchend',e=>{e.preventDefault();onUp(e);},{passive:false});
+
+  window.addEventListener('keydown',e=>{
+    if(e.key>='1'&&e.key<='5'){ placeColorIdx=(+e.key)-1; syncPalette(); }
+  });
+
+  document.getElementById('btnMine').onclick=()=>{ Audio.resume(); startGame('mine'); };
+  document.getElementById('btnTower').onclick=()=>{ Audio.resume(); startGame('tower'); };
+  document.getElementById('btnAgain').onclick=()=>{
+    document.getElementById('endMask').style.display='none';
+    document.getElementById('startMask').classList.remove('hidden');
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('palette').classList.add('hidden');
+    document.getElementById('cross').style.display='none';
+  };
+  document.getElementById('muteBtn').onclick=()=>{
+    const m=Audio.toggle();
+    document.getElementById('muteBtn').textContent = m?'♪ OFF':'♪ ON';
+    if(!m){ Audio.resume(); if(running) Audio.startMusic(); }
+  };
+}
+
+// ============================================================
+//  resize(仅尺寸真正变化时)
+// ============================================================
+let lastW=0,lastH=0;
+function handleResize(){
+  const app=document.getElementById('app');
+  const w=app.clientWidth, h=app.clientHeight;
+  if(w===lastW && h===lastH) return;
+  lastW=w; lastH=h;
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h,false);
+}
+
+// ============================================================
+//  主循环
+// ============================================================
+function update(dt){
+  try{
+    if(DEMO && running) ai.update(dt);
+    // 采矿倒计时
+    if(running && mode==='mine' && timeLeft>0){
+      timeLeft-=dt;
+      if(timeLeft<=0){ timeLeft=0; updateHUD(); endGame(false); }
+      else if(Math.floor(timeLeft*4)%2===0) updateHUD();
+    }
+    updateCamera();
+    if(!DEMO) updateHighlight();
+    updateParticles(dt);
+    if(flashT>0) flashT-=dt;
+    if(bumpT>0) bumpT-=dt;
+    // 高亮脉动
+    if(highlightMesh.visible){
+      const s=1+Math.sin(performance.now()*0.006)*0.03;
+      highlightMesh.scale.set(s,s,s);
+    }
+  }catch(err){ console.error('update', err); }
+}
+
+function draw(){
+  try{
+    // flash 叠加在背景上
+    if(flashT>0){
+      const k=flashT/0.4;
+      scene.background.setHex(0x140828).lerp(flashColor,0.18*k);
+    } else if(scene.background) scene.background.setHex(0x140828);
+    // bump:相机轻微拉近
+    if(bumpT>0){ camera.position.lerp(camTarget, 0.02*(bumpT/0.25)); }
+    renderer.render(scene,camera);
+  }catch(err){ console.error('draw', err); }
+}
+
+let lastT=performance.now();
+function loop(){
+  requestAnimationFrame(loop);
+  const now=performance.now();
+  let dt=(now-lastT)/1000; lastT=now;
+  if(dt>0.05) dt=0.05; // 限制步长
+  handleResize();
+  update(dt);
+  draw();
+}
+
+// ============================================================
+//  录制
+// ============================================================
+function startRecording(sec){
+  try{
+    const cv=renderer.domElement;
+    const stream=cv.captureStream(30);
+    if(!stream.getVideoTracks().length){ console.warn('无视频轨,放弃录制'); return; }
+    let mt='video/webm;codecs=vp9';
+    if(!MediaRecorder.isTypeSupported(mt)) mt=(MediaRecorder.isTypeSupported('video/webm;codecs=vp8')?'video/webm;codecs=vp8':'video/webm');
+    const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+    const chunks=[];
+    mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+    mr.onstop=()=>{
+      const b=new Blob(chunks,{type:'video/webm'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(b); a.download='neon-voxel.webm';
+      document.body.appendChild(a); try{a.click()}catch(e){}
+    };
+    mr.start(250);
+    setTimeout(()=>{ try{mr.stop()}catch(e){} }, sec*1000);
+  }catch(e){ console.warn('record', e); }
+}
+
+// ============================================================
+//  启动
+// ============================================================
+function boot(){
+  initThree();
+  initParticles();
+  bindInput();
+  handleResize();
+  loop();
+
+  if(DEMO){
+    // 免手势直接开局
+    startGame(Math.random()<0.5?'mine':'tower');
+    // demo 下尝试 resume 音频(可能被策略拦,无伤大雅)
+    Audio.resume(); Audio.startMusic();
+    if(RECORD_SEC>0){ setTimeout(()=>startRecording(RECORD_SEC), 600); }
+  }
+}
+boot();
+</script>
+</body>
+</html>

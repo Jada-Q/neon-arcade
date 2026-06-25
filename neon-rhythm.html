@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON RHYTHM — 合成波下落式音游</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ====== 全局变量:OutRun 霓虹配色 ====== */
+  :root{
+    --pink:#ff2e88;
+    --cyan:#5ef0ff;
+    --magenta:#ff5ec8;
+    --gold:#ffd95e;
+    --green:#5effa0;
+    --bg-sunset: linear-gradient(#160a36,#3a1457 30%,#7a2a6e 50%,#ff5e7e 64%,#ff9a4d 72%,#160a36 72%);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:100%;height:100%;overflow:hidden;background:#0a0420;}
+  body{
+    font-family:'Chakra Petch','Microsoft YaHei',sans-serif;
+    color:#fff;
+    -webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:none;
+  }
+  /* 游戏容器 */
+  #stage{position:fixed;inset:0;background:var(--bg-sunset);}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;}
+
+  /* ====== 全屏 CRT 扫描线叠加 ====== */
+  #scanlines{
+    position:fixed;inset:0;pointer-events:none;z-index:50;
+    background:repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.35) 3px,
+      rgba(0,0,0,.35) 4px
+    );
+    opacity:.35;mix-blend-mode:multiply;
+  }
+
+  /* ====== HUD ====== */
+  #hud{
+    position:fixed;top:0;left:0;right:0;z-index:30;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    padding:14px 16px;pointer-events:none;
+  }
+  .hud-box{
+    font-family:'Press Start 2P',monospace;
+    font-size:11px;line-height:1.7;
+    color:var(--cyan);
+    text-shadow:0 0 8px var(--cyan);
+  }
+  .hud-box .lbl{color:var(--gold);text-shadow:0 0 6px var(--gold);font-size:8px;}
+  #hud-center{text-align:center;color:var(--pink);text-shadow:0 0 12px var(--pink);}
+  #combo{font-family:'Press Start 2P';font-size:26px;color:var(--gold);text-shadow:0 0 16px var(--gold),0 0 4px #fff;}
+  #combo small{font-size:9px;color:var(--cyan);text-shadow:0 0 6px var(--cyan);display:block;margin-top:2px;}
+  #judge{font-family:'Press Start 2P';font-size:18px;margin-top:6px;min-height:22px;}
+  #hud-right{text-align:right;}
+
+  /* 静音按钮 */
+  #muteBtn{
+    pointer-events:auto;cursor:pointer;
+    font-family:'Press Start 2P';font-size:9px;
+    background:#160a36;color:var(--green);
+    border:2px solid var(--green);
+    box-shadow:4px 4px 0 var(--pink);
+    padding:8px 10px;margin-top:8px;
+    text-shadow:0 0 6px var(--green);
+  }
+  #muteBtn:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--pink);}
+
+  /* ====== 遮罩(开始 / 结束) ====== */
+  .overlay{
+    position:fixed;inset:0;z-index:60;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(11,4,32,.78);backdrop-filter:blur(2px);
+    text-align:center;padding:20px;
+  }
+  .overlay.hidden{display:none;}
+  .neon-title{
+    font-family:'Press Start 2P';
+    font-size:clamp(20px,6vw,46px);
+    color:var(--pink);
+    text-shadow:0 0 10px var(--pink),0 0 28px var(--pink),3px 3px 0 var(--cyan);
+    letter-spacing:2px;line-height:1.4;margin-bottom:6px;
+  }
+  .neon-sub{
+    font-family:'Chakra Petch';font-weight:600;
+    font-size:clamp(13px,2.6vw,18px);
+    color:var(--cyan);text-shadow:0 0 8px var(--cyan);
+    margin-bottom:22px;max-width:520px;line-height:1.6;
+  }
+  .neon-btn{
+    cursor:pointer;
+    font-family:'Press Start 2P';font-size:clamp(12px,2.4vw,16px);
+    color:#160a36;background:var(--gold);
+    border:3px solid #fff;
+    box-shadow:5px 5px 0 var(--pink),0 0 24px var(--gold);
+    padding:16px 26px;margin-top:8px;
+    transition:transform .05s;
+  }
+  .neon-btn:active{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--pink),0 0 16px var(--gold);}
+  .keyhint{
+    margin-top:24px;font-family:'Press Start 2P';font-size:10px;
+    color:var(--green);text-shadow:0 0 6px var(--green);line-height:2;
+  }
+  #endStats{
+    font-family:'Press Start 2P';font-size:12px;line-height:2.2;
+    color:var(--cyan);text-shadow:0 0 8px var(--cyan);margin:14px 0 18px;
+  }
+  #endStats b{color:var(--gold);text-shadow:0 0 8px var(--gold);}
+  #endRank{
+    font-family:'Press Start 2P';font-size:clamp(36px,12vw,72px);
+    text-shadow:0 0 18px currentColor,0 0 40px currentColor;margin:10px 0;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="bgCanvas"></canvas>   <!-- 背景:日落/网格/扫描 -->
+  <canvas id="gameCanvas"></canvas> <!-- 游戏:轨道/音符/粒子 -->
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="hud-left" class="hud-box">
+    <div><span class="lbl">SCORE</span><br><span id="score">0</span></div>
+    <div style="margin-top:8px"><span class="lbl">BEST</span><br><span id="best">0</span></div>
+  </div>
+  <div id="hud-center">
+    <div id="combo"></div>
+    <div id="judge"></div>
+  </div>
+  <div id="hud-right" class="hud-box">
+    <div><span class="lbl">ACC</span><br><span id="acc">100.0%</span></div>
+    <div><span class="lbl">PROG</span><br><span id="prog">0%</span></div>
+    <button id="muteBtn">SOUND ON</button>
+  </div>
+</div>
+
+<!-- 扫描线 -->
+<div id="scanlines"></div>
+
+<!-- 开始遮罩 -->
+<div id="startOverlay" class="overlay">
+  <div class="neon-title">NEON<br>RHYTHM</div>
+  <div class="neon-sub">合成波下落式节奏音游 · BPM 130<br>音符落到霓虹判定线时按对应键命中</div>
+  <button id="startBtn" class="neon-btn">▶ 点击开始</button>
+  <div class="keyhint">KEYS:&nbsp; D&nbsp;F&nbsp;J&nbsp;K&nbsp; / &nbsp;← ↓ ↑ →<br>移动端:底部四区触摸</div>
+</div>
+
+<!-- 结束遮罩 -->
+<div id="endOverlay" class="overlay hidden">
+  <div class="neon-title" style="font-size:clamp(18px,5vw,38px)">SONG CLEAR</div>
+  <div id="endRank"></div>
+  <div id="endStats"></div>
+  <button id="restartBtn" class="neon-btn">↻ 再来一次</button>
+</div>
+
+<script>
+"use strict";
+/* =======================================================================
+   NEON RHYTHM —— 合成波 OutRun 下落式节奏音游
+   单文件 / 原生 Canvas + Web Audio。所有注释为中文。
+   关键点:用 audioCtx.currentTime 做采样级对齐,保证音画同步。
+   ======================================================================= */
+
+// ---------- DOM 引用 ----------
+const bgCanvas   = document.getElementById('bgCanvas');
+const gameCanvas = document.getElementById('gameCanvas');
+const bgx  = bgCanvas.getContext('2d');
+const ctx  = gameCanvas.getContext('2d');
+
+const elScore = document.getElementById('score');
+const elBest  = document.getElementById('best');
+const elAcc   = document.getElementById('acc');
+const elProg  = document.getElementById('prog');
+const elCombo = document.getElementById('combo');
+const elJudge = document.getElementById('judge');
+const muteBtn = document.getElementById('muteBtn');
+
+const startOverlay = document.getElementById('startOverlay');
+const endOverlay   = document.getElementById('endOverlay');
+const startBtn = document.getElementById('startBtn');
+const restartBtn = document.getElementById('restartBtn');
+const endRank  = document.getElementById('endRank');
+const endStats = document.getElementById('endStats');
+
+// ---------- 配色 ----------
+const COL = {
+  pink:'#ff2e88', cyan:'#5ef0ff', magenta:'#ff5ec8', gold:'#ffd95e', green:'#5effa0'
+};
+// 四条轨道各自的霓虹色
+const LANE_COLORS = [COL.cyan, COL.magenta, COL.gold, COL.green];
+// 键位映射:D F J K + 方向键
+const LANE_KEYS = [
+  ['KeyD','ArrowLeft'],
+  ['KeyF','ArrowDown'],
+  ['KeyJ','ArrowUp'],
+  ['KeyK','ArrowRight']
+];
+
+// ---------- 画布尺寸/自适应 ----------
+let W=0,H=0,DPR=1;
+let laneW=0, lanesX=0, lanesW=0, hitY=0, noteH=0;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  for(const c of [bgCanvas,gameCanvas]){
+    c.width = Math.floor(W*DPR);
+    c.height= Math.floor(H*DPR);
+  }
+  bgx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  // 计算轨道区域:居中,宽度自适应
+  lanesW = Math.min(W*0.92, 520);
+  lanesX = (W - lanesW)/2;
+  laneW = lanesW/4;
+  hitY = H - Math.max(120, H*0.16);   // 判定线 Y(距底)
+  noteH = Math.max(16, laneW*0.22);
+  drawBackground(); // 重新预渲染背景
+}
+window.addEventListener('resize', resize);
+
+// =======================================================================
+//  Web Audio:程序化音效 + 合成波循环配乐
+// =======================================================================
+let audioCtx = null;
+let masterGain = null, musicGain = null, sfxGain = null;
+let muted = false;
+const BPM = 130;
+const SPB = 60/BPM;             // 每拍秒数 ≈0.4615
+let musicStartTime = 0;        // 配乐在 audioCtx 时间轴上的起点
+let songDuration = 0;          // 谱面总时长(秒)
+
+// 初始化音频上下文(必须在用户手势后)
+function initAudio(){
+  if(audioCtx) return;
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  masterGain = audioCtx.createGain(); masterGain.gain.value = 0.9;
+  musicGain = audioCtx.createGain(); musicGain.gain.value = 0.55;
+  sfxGain   = audioCtx.createGain(); sfxGain.gain.value   = 0.9;
+  musicGain.connect(masterGain);
+  sfxGain.connect(masterGain);
+  masterGain.connect(audioCtx.destination);
+}
+
+// ----- 命中/失败 程序化音效 -----
+function blip(type){
+  if(!audioCtx || muted) return;
+  const t = audioCtx.currentTime;
+  if(type==='perfect' || type==='good'){
+    // 明亮的两段方波 + 噪声 hat
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'square';
+    const base = type==='perfect' ? 880 : 660;
+    o.frequency.setValueAtTime(base, t);
+    o.frequency.exponentialRampToValueAtTime(base*2, t+0.06);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(type==='perfect'?0.32:0.22, t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.13);
+    o.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t+0.15);
+    // hi-hat 噪声
+    const nb = audioCtx.createBuffer(1, 1024, audioCtx.sampleRate);
+    const d = nb.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
+    const ns = audioCtx.createBufferSource(); ns.buffer=nb;
+    const nf = audioCtx.createBiquadFilter(); nf.type='highpass'; nf.frequency.value=6000;
+    const ng = audioCtx.createGain(); ng.gain.value = 0.12;
+    ns.connect(nf); nf.connect(ng); ng.connect(sfxGain);
+    ns.start(t);
+  } else {
+    // miss:低沉下滑锯齿
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type='sawtooth';
+    o.frequency.setValueAtTime(220, t);
+    o.frequency.exponentialRampToValueAtTime(70, t+0.22);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.25,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
+    o.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t+0.27);
+  }
+}
+
+// ----- 合成波循环配乐:用 setTimeout 调度器逐拍排音 -----
+// 旋律音阶(A 小调五声风格,Hz)
+const SCALE = [220.00,261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25];
+// 8 小节旋律动机(以音阶索引表示,-1=休止),每个值=一个八分音符
+const MELODY = [
+  4,4,2,4,  6,4,2,1,   4,4,2,4,  3,2,1,0,
+  2,2,4,2,  5,4,2,4,   6,6,4,6,  8,6,4,2,
+  4,4,2,4,  6,4,2,1,   7,6,4,6,  8,7,6,4,
+  2,4,6,4,  3,2,1,2,   0,2,4,2,  0,-1,0,-1
+];
+const BASS = [ // 每拍一个根音(Hz,低八度),16 拍循环
+  110,110,82.41,82.41, 98,98,73.42,73.42,
+  110,110,82.41,82.41, 65.41,65.41,98,98
+];
+
+let schedulerTimer = null;
+let nextNoteTime = 0;   // 下一个待排八分音符的绝对时间(audioCtx)
+let melodyIdx = 0;      // 旋律游标(自增,取模)
+let eighthCount = 0;    // 全局八分音符计数,用于鼓点
+
+// 排一个八分音符(旋律+可能的贝斯/鼓)
+function scheduleEighth(time){
+  // --- 旋律 ---
+  const mi = MELODY[melodyIdx % MELODY.length];
+  if(mi>=0){
+    playMelodyNote(SCALE[mi], time, SPB*0.5*0.92);
+  }
+  // --- 贝斯:每拍(偶数八分)触发 ---
+  if(eighthCount % 2 === 0){
+    const bi = (eighthCount/2) % BASS.length;
+    playBass(BASS[bi], time, SPB*0.9);
+  }
+  // --- 鼓:kick 在拍 0/2,snare 在拍 1/3,hat 每八分 ---
+  const beatInBar = (eighthCount/2) % 4;
+  if(eighthCount % 2 === 0){
+    if(beatInBar===0 || beatInBar===2) playKick(time);
+    if(beatInBar===1 || beatInBar===3) playSnare(time);
+  }
+  playHat(time, eighthCount%2===0?0.10:0.06);
+
+  melodyIdx++;
+  eighthCount++;
+}
+// 合成波 lead 音
+function playMelodyNote(freq,time,dur){
+  const o1=audioCtx.createOscillator(), o2=audioCtx.createOscillator();
+  const g=audioCtx.createGain(), f=audioCtx.createBiquadFilter();
+  o1.type='sawtooth'; o2.type='square';
+  o1.frequency.value=freq; o2.frequency.value=freq*1.005; o2.detune.value=8;
+  f.type='lowpass'; f.frequency.setValueAtTime(2600,time);
+  f.frequency.exponentialRampToValueAtTime(900,time+dur);
+  g.gain.setValueAtTime(0.0001,time);
+  g.gain.exponentialRampToValueAtTime(0.18,time+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
+  o1.connect(f);o2.connect(f);f.connect(g);g.connect(musicGain);
+  o1.start(time);o2.start(time);o1.stop(time+dur+0.02);o2.stop(time+dur+0.02);
+}
+function playBass(freq,time,dur){
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type='triangle';o.frequency.value=freq;
+  g.gain.setValueAtTime(0.0001,time);
+  g.gain.exponentialRampToValueAtTime(0.30,time+0.02);
+  g.gain.exponentialRampToValueAtTime(0.05,time+dur*0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001,time+dur);
+  o.connect(g);g.connect(musicGain);
+  o.start(time);o.stop(time+dur+0.02);
+}
+function playKick(time){
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.frequency.setValueAtTime(150,time);
+  o.frequency.exponentialRampToValueAtTime(45,time+0.12);
+  g.gain.setValueAtTime(0.6,time);
+  g.gain.exponentialRampToValueAtTime(0.0001,time+0.18);
+  o.connect(g);g.connect(musicGain);
+  o.start(time);o.stop(time+0.2);
+}
+function playSnare(time){
+  const nb=audioCtx.createBuffer(1,2048,audioCtx.sampleRate);
+  const d=nb.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,1.5);
+  const s=audioCtx.createBufferSource();s.buffer=nb;
+  const f=audioCtx.createBiquadFilter();f.type='highpass';f.frequency.value=1500;
+  const g=audioCtx.createGain();
+  g.gain.setValueAtTime(0.35,time);
+  g.gain.exponentialRampToValueAtTime(0.0001,time+0.15);
+  s.connect(f);f.connect(g);g.connect(musicGain);
+  s.start(time);
+}
+function playHat(time,vol){
+  const nb=audioCtx.createBuffer(1,512,audioCtx.sampleRate);
+  const d=nb.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1);
+  const s=audioCtx.createBufferSource();s.buffer=nb;
+  const f=audioCtx.createBiquadFilter();f.type='highpass';f.frequency.value=8000;
+  const g=audioCtx.createGain();
+  g.gain.setValueAtTime(vol,time);
+  g.gain.exponentialRampToValueAtTime(0.0001,time+0.05);
+  s.connect(f);f.connect(g);g.connect(musicGain);
+  s.start(time);
+}
+
+// 调度器循环:提前 0.15s 排音,保证精确
+const SCHED_AHEAD = 0.15;
+function audioScheduler(){
+  if(!audioCtx) return;
+  while(nextNoteTime < audioCtx.currentTime + SCHED_AHEAD){
+    scheduleEighth(nextNoteTime);
+    nextNoteTime += SPB*0.5;  // 推进一个八分音符
+  }
+  schedulerTimer = setTimeout(audioScheduler, 25);
+}
+
+// =======================================================================
+//  谱面生成:确定性数组 [{time, lane}]
+// =======================================================================
+let chart = [];          // 音符列表
+function buildChart(){
+  chart = [];
+  const totalBeats = 200;          // 约 200 拍 ≈ 92 秒
+  let seed = 1337;
+  const rnd = ()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+  let lastLane = -1;
+  for(let beat=4; beat<totalBeats; beat++){      // 前 4 拍留白做引导
+    const t = beat*SPB;
+    const progress = beat/totalBeats;            // 难度进度 0..1
+    // 正拍:几乎总是有音符
+    pushNote(t, pickLane(rnd,()=>lastLane,l=>lastLane=l));
+    // 反拍(八分):随进度增加密度
+    const eighthChance = 0.18 + progress*0.55;
+    if(rnd() < eighthChance){
+      pushNote(t+SPB*0.5, pickLane(rnd,()=>lastLane,l=>lastLane=l));
+    }
+    // 高难段:十六分双押(后半程偶发)
+    if(progress>0.45 && rnd() < progress*0.18){
+      const t2 = t+SPB*0.25;
+      pushNote(t2, pickLane(rnd,()=>lastLane,l=>lastLane=l));
+    }
+  }
+  chart.sort((a,b)=>a.time-b.time);
+  // 总时长 = 最后音符 + 缓冲
+  songDuration = chart[chart.length-1].time + 3;
+}
+function pickLane(rnd,getLast,setLast){
+  let l;
+  do{ l = Math.floor(rnd()*4); }while(l===getLast() && rnd()<0.6);
+  setLast(l);
+  return l;
+}
+function pushNote(time,lane){
+  chart.push({time, lane, hit:false, missed:false, spawnAnim:0});
+}
+
+// =======================================================================
+//  游戏状态
+// =======================================================================
+let state = 'menu';   // menu / playing / ended
+let songTime = 0;     // 当前歌曲时间(秒)= audioCtx.currentTime - musicStartTime
+const APPROACH = 1.6; // 音符从顶部到判定线的飞行时间(秒)→ 决定下落速度
+
+// 判定窗口(秒)
+const W_PERFECT = 0.045;
+const W_GOOD    = 0.110;
+const W_MISS    = 0.150;  // 超过此值仍未按 → 自动 Miss
+
+// 统计
+let score=0, combo=0, maxCombo=0;
+let nPerfect=0, nGood=0, nMiss=0, totalJudged=0;
+let best = parseInt(localStorage.getItem('neonRhythmBest')||'0',10);
+
+// 视觉效果容器
+let particles = [];   // 粒子
+let flashes = [];     // 判定线闪光(每轨)
+let laneGlow = [0,0,0,0]; // 轨道按下发光衰减
+let judgeText = {txt:'',col:'#fff',life:0};
+let beatPulse = 0;    // 随拍脉动
+
+elBest.textContent = best;
+
+// 重置一局
+function resetGame(){
+  buildChart();
+  score=0;combo=0;maxCombo=0;
+  nPerfect=0;nGood=0;nMiss=0;totalJudged=0;
+  particles=[];flashes=[];laneGlow=[0,0,0,0];
+  judgeText={txt:'',col:'#fff',life:0};
+  for(const n of chart){n.hit=false;n.missed=false;}
+  updateHUD();
+}
+
+// =======================================================================
+//  输入处理
+// =======================================================================
+const keyDown = [false,false,false,false];
+function pressLane(lane){
+  if(state!=='playing') return;
+  laneGlow[lane] = 1;
+  // 找到该轨道中最接近判定线、未处理、在窗口内的音符
+  let bestIdx=-1, bestDt=Infinity;
+  for(let i=0;i<chart.length;i++){
+    const n=chart[i];
+    if(n.lane!==lane||n.hit||n.missed) continue;
+    const dt = n.time - songTime;
+    if(dt > W_MISS) break;           // 已排序,后面都更远
+    const adt = Math.abs(dt);
+    if(adt <= W_MISS && adt < bestDt){ bestDt=adt; bestIdx=i; }
+  }
+  if(bestIdx<0){
+    // 空击:不扣分,仅轻微反馈
+    return;
+  }
+  const n = chart[bestIdx];
+  if(bestDt <= W_PERFECT) judge('perfect',n);
+  else if(bestDt <= W_GOOD) judge('good',n);
+  else judge('miss',n);
+}
+
+// 判定结算
+function judge(kind,note){
+  note.hit = true;
+  totalJudged++;
+  const lane = note.lane;
+  if(kind==='perfect'){
+    nPerfect++; combo++; score += 300 + Math.min(combo,50)*4;
+    setJudge('PERFECT', COL.cyan);
+    spawnHit(lane, COL.cyan, 1.0);
+    blip('perfect');
+  } else if(kind==='good'){
+    nGood++; combo++; score += 150 + Math.min(combo,50)*2;
+    setJudge('GOOD', COL.gold);
+    spawnHit(lane, COL.gold, 0.7);
+    blip('good');
+  } else {
+    note.missed=true; nMiss++; combo=0;
+    setJudge('MISS', COL.pink);
+    blip('miss');
+  }
+  if(combo>maxCombo) maxCombo=combo;
+  beatPulse = Math.min(1.4, beatPulse+0.5);
+  updateHUD();
+}
+// 自动漏判(音符飞过判定线未按)
+function autoMiss(note){
+  note.missed=true; note.hit=true;
+  totalJudged++; nMiss++; combo=0;
+  setJudge('MISS', COL.pink);
+  blip('miss');
+  updateHUD();
+}
+
+function setJudge(txt,col){ judgeText={txt,col,life:0.55}; }
+
+// 命中粒子 + 闪光
+function spawnHit(lane,color,power){
+  const cx = lanesX + lane*laneW + laneW/2;
+  const cy = hitY;
+  flashes.push({lane, life:0.35, color});
+  laneGlow[lane]=1.2;
+  const count = Math.floor(14*power)+8;
+  for(let i=0;i<count;i++){
+    const ang = -Math.PI/2 + (Math.random()-0.5)*Math.PI*1.3;
+    const spd = 120 + Math.random()*260*power;
+    particles.push({
+      x:cx, y:cy,
+      vx:Math.cos(ang)*spd,
+      vy:Math.sin(ang)*spd - 60,
+      life:0.5+Math.random()*0.4, max:0.9,
+      size:2+Math.random()*4, color
+    });
+  }
+}
+
+// 键盘
+window.addEventListener('keydown', e=>{
+  if(e.repeat) return;
+  if(state==='menu' && (e.code==='Space'||e.code==='Enter')){ startGame(); return; }
+  if(state==='ended' && (e.code==='Space'||e.code==='Enter')){ startGame(); return; }
+  for(let l=0;l<4;l++){
+    if(LANE_KEYS[l].includes(e.code)){
+      if(!keyDown[l]){ keyDown[l]=true; pressLane(l); }
+      e.preventDefault();
+    }
+  }
+});
+window.addEventListener('keyup', e=>{
+  for(let l=0;l<4;l++) if(LANE_KEYS[l].includes(e.code)) keyDown[l]=false;
+});
+
+// 触摸:底部四区
+function laneFromX(x){
+  if(x<lanesX || x>lanesX+lanesW) {
+    // 屏幕左右半:仍映射到最近轨道,提升手感
+    const rel = Math.max(0,Math.min(lanesW, x-lanesX));
+    return Math.max(0,Math.min(3,Math.floor(rel/laneW)));
+  }
+  return Math.max(0,Math.min(3,Math.floor((x-lanesX)/laneW)));
+}
+gameCanvas.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    pressLane(laneFromX(t.clientX));
+  }
+},{passive:false});
+
+// =======================================================================
+//  背景预渲染(日落 + 网格地平线)
+// =======================================================================
+function drawBackground(){
+  bgx.clearRect(0,0,W,H);
+  // 远处太阳
+  const sunY = H*0.34, sunR = Math.min(W,H)*0.18;
+  const sg = bgx.createLinearGradient(0,sunY-sunR,0,sunY+sunR);
+  sg.addColorStop(0,'#ffe65e'); sg.addColorStop(0.5,'#ff8a3d'); sg.addColorStop(1,'#ff2e88');
+  bgx.save();
+  bgx.beginPath(); bgx.arc(W/2,sunY,sunR,0,Math.PI*2); bgx.clip();
+  bgx.fillStyle=sg; bgx.fillRect(W/2-sunR,sunY-sunR,sunR*2,sunR*2);
+  // 太阳横向切割线
+  bgx.globalCompositeOperation='destination-out';
+  for(let i=0;i<8;i++){
+    const yy = sunY + i*sunR*0.16;
+    bgx.fillStyle='rgba(0,0,0,1)';
+    bgx.fillRect(W/2-sunR, yy, sunR*2, sunR*0.06*(1+i*0.5));
+  }
+  bgx.restore();
+  // 太阳光晕
+  const glow=bgx.createRadialGradient(W/2,sunY,sunR*0.6,W/2,sunY,sunR*2.4);
+  glow.addColorStop(0,'rgba(255,94,126,0.35)');
+  glow.addColorStop(1,'rgba(255,94,126,0)');
+  bgx.fillStyle=glow; bgx.fillRect(0,0,W,H);
+
+  // 地平线网格(透视)
+  const horizon = H*0.46;
+  bgx.strokeStyle='rgba(94,240,255,0.35)';
+  bgx.lineWidth=1.5;
+  // 横线(随距离收缩)
+  for(let i=1;i<=14;i++){
+    const f = i/14;
+    const y = horizon + (H-horizon)*(f*f);
+    bgx.globalAlpha = 0.5*(1-f)+0.15;
+    bgx.beginPath(); bgx.moveTo(0,y); bgx.lineTo(W,y); bgx.stroke();
+  }
+  bgx.globalAlpha=1;
+  // 竖线(汇聚到中心消失点)
+  bgx.strokeStyle='rgba(255,46,136,0.3)';
+  const vp = W/2;
+  for(let i=-12;i<=12;i++){
+    const xb = vp + i*(W/8);
+    bgx.beginPath(); bgx.moveTo(vp + i*8, horizon); bgx.lineTo(xb, H); bgx.stroke();
+  }
+}
+
+// =======================================================================
+//  主循环:requestAnimationFrame + delta time
+// =======================================================================
+let lastT = performance.now();
+function loop(now){
+  const dt = Math.min(0.05,(now-lastT)/1000);
+  lastT = now;
+
+  if(state==='playing'){
+    // —— 采样级对齐:歌曲时间严格取自 audioCtx.currentTime ——
+    songTime = audioCtx.currentTime - musicStartTime;
+    aiTick();          // 自动演示时:AI 在判定时刻自动命中
+    updateGame(dt);
+  }
+  render(dt);
+  requestAnimationFrame(loop);
+}
+
+function updateGame(dt){
+  // 进度
+  elProg.textContent = Math.min(100,Math.floor(songTime/songDuration*100))+'%';
+  // 拍脉动衰减
+  beatPulse = Math.max(0, beatPulse - dt*3);
+  // 跟随节拍触发轻脉动
+  const beatPhase = (songTime/SPB)%1;
+  if(beatPhase < dt/SPB) beatPulse = Math.max(beatPulse,0.6);
+
+  // 自动漏判
+  for(const n of chart){
+    if(!n.hit && !n.missed && (songTime - n.time) > W_MISS){
+      autoMiss(n);
+    }
+  }
+  // 粒子更新
+  for(const p of particles){
+    p.life -= dt;
+    p.x += p.vx*dt; p.y += p.vy*dt;
+    p.vy += 520*dt;       // 重力
+    p.vx *= (1-1.5*dt);
+  }
+  particles = particles.filter(p=>p.life>0);
+  // 闪光更新
+  for(const f of flashes) f.life -= dt;
+  flashes = flashes.filter(f=>f.life>0);
+  // 轨道发光衰减
+  for(let i=0;i<4;i++) laneGlow[i]=Math.max(0, laneGlow[i]-dt*3);
+  // 判定文字衰减
+  if(judgeText.life>0) judgeText.life-=dt;
+
+  // 结束判定
+  if(songTime >= songDuration){ endGame(); }
+}
+
+// =======================================================================
+//  渲染
+// =======================================================================
+function render(dt){
+  ctx.clearRect(0,0,W,H);
+  if(state==='menu') return;
+
+  const pulse = 1 + beatPulse*0.04;
+
+  // ---- 四道轨道 ----
+  for(let l=0;l<4;l++){
+    const x = lanesX + l*laneW;
+    const col = LANE_COLORS[l];
+    // 轨道背景渐变
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'rgba(10,4,32,0.0)');
+    g.addColorStop(0.5,'rgba(20,8,48,0.35)');
+    g.addColorStop(1,'rgba(20,8,48,0.55)');
+    ctx.fillStyle=g;
+    ctx.fillRect(x,0,laneW,H);
+    // 轨道边线发光
+    ctx.save();
+    ctx.shadowColor=col; ctx.shadowBlur=12+laneGlow[l]*22;
+    ctx.strokeStyle=col;
+    ctx.globalAlpha=0.4+laneGlow[l]*0.5;
+    ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+    if(l===3){ ctx.beginPath(); ctx.moveTo(x+laneW,0); ctx.lineTo(x+laneW,H); ctx.stroke(); }
+    ctx.restore();
+    // 按下时轨道高亮填充
+    if(laneGlow[l]>0){
+      ctx.save();
+      const lg=ctx.createLinearGradient(0,hitY-200,0,hitY+40);
+      lg.addColorStop(0,'rgba(255,255,255,0)');
+      lg.addColorStop(1, hexA(col,0.18*laneGlow[l]));
+      ctx.fillStyle=lg;
+      ctx.fillRect(x,hitY-200,laneW,240);
+      ctx.restore();
+    }
+  }
+
+  // ---- 霓虹判定线 ----
+  ctx.save();
+  ctx.shadowColor=COL.pink; ctx.shadowBlur=22*pulse;
+  ctx.strokeStyle=COL.pink; ctx.lineWidth=4*pulse;
+  ctx.beginPath(); ctx.moveTo(lanesX-8,hitY); ctx.lineTo(lanesX+lanesW+8,hitY); ctx.stroke();
+  ctx.shadowBlur=10; ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(lanesX-8,hitY); ctx.lineTo(lanesX+lanesW+8,hitY); ctx.stroke();
+  ctx.restore();
+  // 判定线上的四个圆形接收器
+  for(let l=0;l<4;l++){
+    const cx=lanesX+l*laneW+laneW/2;
+    const r=laneW*0.30*(1+laneGlow[l]*0.25);
+    ctx.save();
+    ctx.shadowColor=LANE_COLORS[l]; ctx.shadowBlur=14+laneGlow[l]*26;
+    ctx.strokeStyle=LANE_COLORS[l];
+    ctx.globalAlpha=0.6+laneGlow[l]*0.4;
+    ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(cx,hitY,r,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- 音符 ----
+  if(state==='playing'){
+    const topY = -noteH;
+    for(const n of chart){
+      if(n.hit && !n.missed) continue;            // 已命中不画
+      const dt2 = n.time - songTime;
+      if(dt2 > APPROACH+0.2) break;               // 还没进入视野(已排序)
+      if(dt2 < -W_MISS-0.05) continue;            // 已彻底飞过
+      // 位置:dt2=APPROACH 在顶部,dt2=0 在判定线
+      const prog = 1 - dt2/APPROACH;              // 0..1
+      const y = topY + (hitY-topY)*prog;
+      drawNote(n.lane, y, n.missed);
+    }
+  }
+
+  // ---- 命中闪光 ----
+  for(const f of flashes){
+    const x=lanesX+f.lane*laneW;
+    const a = f.life/0.35;
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha=a*0.8;
+    const rg=ctx.createRadialGradient(x+laneW/2,hitY,2,x+laneW/2,hitY,laneW*0.9);
+    rg.addColorStop(0,f.color);
+    rg.addColorStop(1,hexA(f.color,0));
+    ctx.fillStyle=rg;
+    ctx.fillRect(x-laneW*0.4,hitY-laneW,laneW*1.8,laneW*2);
+    // 命中环扩散
+    ctx.strokeStyle=f.color; ctx.lineWidth=3*a;
+    ctx.globalAlpha=a*0.9;
+    ctx.beginPath();
+    ctx.arc(x+laneW/2,hitY,laneW*0.3+(1-a)*laneW*0.6,0,Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- 粒子 ----
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  for(const p of particles){
+    const a=Math.max(0,p.life/p.max);
+    ctx.globalAlpha=a;
+    ctx.fillStyle=p.color;
+    ctx.shadowColor=p.color; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.size*a+0.5,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+
+  // ---- 中央判定文字脉冲 ----
+  if(judgeText.life>0){
+    const a = Math.min(1, judgeText.life/0.25);
+    const sc = 1 + (0.55-judgeText.life)*0.6;
+    ctx.save();
+    ctx.globalAlpha=a;
+    ctx.translate(W/2, hitY-90);
+    ctx.scale(sc,sc);
+    ctx.font="22px 'Press Start 2P',monospace";
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.shadowColor=judgeText.col; ctx.shadowBlur=18;
+    ctx.fillStyle=judgeText.col;
+    ctx.fillText(judgeText.txt,0,0);
+    ctx.restore();
+  }
+}
+
+// 画单个音符(带霓虹胶囊外观)
+function drawNote(lane,y,missed){
+  const x=lanesX+lane*laneW;
+  const pad=laneW*0.14;
+  const nx=x+pad, nw=laneW-pad*2;
+  const col = missed? '#888' : LANE_COLORS[lane];
+  ctx.save();
+  if(!missed){ ctx.shadowColor=col; ctx.shadowBlur=16; }
+  ctx.globalAlpha = missed?0.4:1;
+  // 渐变填充胶囊
+  const g=ctx.createLinearGradient(0,y-noteH/2,0,y+noteH/2);
+  g.addColorStop(0,'#ffffff');
+  g.addColorStop(0.5,col);
+  g.addColorStop(1,hexA(col,0.6));
+  ctx.fillStyle=g;
+  roundRect(nx,y-noteH/2,nw,noteH,noteH*0.4);
+  ctx.fill();
+  // 高光描边
+  ctx.shadowBlur=0;
+  ctx.strokeStyle='rgba(255,255,255,0.85)';
+  ctx.lineWidth=1.5;
+  roundRect(nx,y-noteH/2,nw,noteH,noteH*0.4);
+  ctx.stroke();
+  ctx.restore();
+}
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+// 十六进制颜色加 alpha
+function hexA(hex,a){
+  const h=hex.replace('#','');
+  const r=parseInt(h.substr(0,2),16),g=parseInt(h.substr(2,2),16),b=parseInt(h.substr(4,2),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// =======================================================================
+//  HUD 更新
+// =======================================================================
+function updateHUD(){
+  elScore.textContent = score;
+  elCombo.innerHTML = combo>1 ? `${combo}<small>COMBO</small>` : '';
+  const acc = totalJudged>0
+    ? ((nPerfect*100 + nGood*60)/(totalJudged*100))*100
+    : 100;
+  elAcc.textContent = acc.toFixed(1)+'%';
+}
+
+// =======================================================================
+//  开始 / 结束 流程
+// =======================================================================
+function startGame(){
+  initAudio();
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  // 取消上一局结束时排定的渐隐斜坡,确保新一局配乐音量恢复正常(快速重开不会变静音)
+  if(musicGain){
+    musicGain.gain.cancelScheduledValues(audioCtx.currentTime);
+    musicGain.gain.setValueAtTime(0.55, audioCtx.currentTime);
+  }
+  resetGame();
+  startOverlay.classList.add('hidden');
+  endOverlay.classList.add('hidden');
+  state='playing';
+  // —— 音画对齐核心:记录配乐起点,稍微延迟以便首批音符排程 ——
+  const startAt = audioCtx.currentTime + 0.12;
+  musicStartTime = startAt;
+  songTime = 0;
+  // 启动音频调度器
+  melodyIdx=0; eighthCount=0;
+  nextNoteTime = startAt;
+  if(schedulerTimer) clearTimeout(schedulerTimer);
+  audioScheduler();
+}
+
+function endGame(){
+  if(state!=='playing') return;
+  state='ended';
+  if(schedulerTimer){ clearTimeout(schedulerTimer); schedulerTimer=null; }
+  // 渐隐配乐
+  if(musicGain) musicGain.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime+0.6);
+  // 最高分
+  if(score>best){ best=score; localStorage.setItem('neonRhythmBest',String(best)); elBest.textContent=best; }
+  // 评级
+  const acc = totalJudged>0 ? ((nPerfect*100+nGood*60)/(totalJudged*100))*100 : 0;
+  let rank='D', rcol=COL.pink;
+  if(acc>=98){rank='S';rcol=COL.gold;}
+  else if(acc>=92){rank='A';rcol=COL.green;}
+  else if(acc>=82){rank='B';rcol=COL.cyan;}
+  else if(acc>=70){rank='C';rcol=COL.magenta;}
+  endRank.textContent=rank; endRank.style.color=rcol;
+  endStats.innerHTML =
+    `SCORE <b>${score}</b><br>`+
+    `MAX COMBO <b>${maxCombo}</b><br>`+
+    `ACC <b>${acc.toFixed(1)}%</b><br>`+
+    `<span style="color:${COL.cyan}">PERFECT ${nPerfect}</span>&nbsp; `+
+    `<span style="color:${COL.gold}">GOOD ${nGood}</span>&nbsp; `+
+    `<span style="color:${COL.pink}">MISS ${nMiss}</span>`;
+  endOverlay.classList.remove('hidden');
+  // 恢复 musicGain(下一局用)
+  setTimeout(()=>{ if(musicGain) musicGain.gain.value=0.55; }, 700);
+}
+
+// =======================================================================
+//  静音按钮
+// =======================================================================
+muteBtn.addEventListener('click', ()=>{
+  muted = !muted;
+  if(masterGain) masterGain.gain.value = muted?0:0.9;
+  muteBtn.textContent = muted?'SOUND OFF':'SOUND ON';
+  muteBtn.style.color = muted?COL.pink:COL.green;
+  muteBtn.style.borderColor = muted?COL.pink:COL.green;
+});
+
+// 开始 / 重开 按钮
+startBtn.addEventListener('click', startGame);
+restartBtn.addEventListener('click', startGame);
+
+// =======================================================================
+//  自动演示 + 自录画面(?demo / ?record=N)
+// =======================================================================
+const _params = new URLSearchParams(location.search);
+const _isDemo   = _params.has('demo') || _params.has('record');
+const _recordSec = parseFloat(_params.get('record')||'0');
+
+// AI:每帧检查每条轨道最近的待判定音符,在其到达判定线的精确时刻
+//     直接调用 pressLane() 触发命中判定(打出 PERFECT 高连击)。
+let _aiActive = false;
+function aiTick(){
+  if(!_aiActive || state!=='playing') return;
+  // 对四条轨道分别找到最近且已抵达判定时刻的音符
+  for(let i=0;i<chart.length;i++){
+    const n = chart[i];
+    if(n.hit || n.missed) continue;
+    const dt = n.time - songTime;
+    if(dt > APPROACH+0.2) break;          // 已排序,后面都更远
+    // 当音符抵达/极近判定线(落在 PERFECT 窗口偏前一点),立即命中
+    if(dt <= W_PERFECT*0.5){
+      pressLane(n.lane);
+    }
+  }
+}
+
+// 自动演示:绕过开始遮罩,直接开局并启用 AI
+function startDemo(){
+  startGame();        // 复用既有开局函数(初始化音频/谱面/调度器)
+  _aiActive = true;
+}
+
+// 录制游戏主 canvas N 秒并自动下载 webm
+function startRecording(N){
+  const cv = gameCanvas;                 // 2D 游戏主画布
+  let stream;
+  try{ stream = cv.captureStream(30); }catch(e){ return; }
+  let mt='video/webm;codecs=vp9';
+  if(!MediaRecorder.isTypeSupported(mt)) mt='video/webm';
+  const mr=new MediaRecorder(stream,{mimeType:mt,videoBitsPerSecond:9000000});
+  const chunks=[]; mr.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  mr.onstop=()=>{
+    const blob=new Blob(chunks,{type:'video/webm'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='neon-rhythm.webm';
+    document.body.appendChild(a); try{a.click()}catch(e){}
+  };
+  mr.start();
+  setTimeout(()=>{ try{mr.stop()}catch(e){} }, N*1000);
+}
+
+// =======================================================================
+//  启动
+// =======================================================================
+resize();
+requestAnimationFrame(loop);
+
+// 入口分发:普通游玩完全不变;有参数则自动演示/录制
+if(_isDemo){
+  // 等一帧确保布局/谱面就绪后再自动开局
+  setTimeout(()=>{
+    startDemo();
+    if(_recordSec>0) startRecording(_recordSec);
+  }, 100);
+}
+</script>
+</body>
+</html>

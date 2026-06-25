@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEON WHACK · 霓虹打地鼠</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ===== 合成波 OutRun 配色与基础样式 ===== */
+:root{
+  --pink:#ff2e88; --cyan:#5ef0ff; --magenta:#ff5ec8;
+  --gold:#ffd95e; --green:#5effa0;
+  --bg0:#1a0830; --bg1:#3a0a52; --bg2:#ff5ec8;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;overflow:hidden;}
+body{
+  background:#120422;
+  font-family:'Chakra Petch','Microsoft YaHei',system-ui,sans-serif;
+  color:#fff; user-select:none; -webkit-user-select:none;
+  display:flex; align-items:center; justify-content:center;
+}
+#wrap{position:fixed; inset:0; display:flex; align-items:center; justify-content:center;}
+svg{display:block; width:100vw; height:100vh; touch-action:none;}
+
+/* HUD */
+#hud{
+  position:fixed; top:0; left:0; right:0; z-index:20;
+  display:flex; justify-content:space-between; align-items:flex-start;
+  padding:14px 18px; pointer-events:none;
+  font-family:'Chakra Petch',sans-serif;
+}
+.hud-box{
+  background:rgba(20,4,40,.55); border:2px solid var(--cyan);
+  border-radius:10px; padding:7px 12px; backdrop-filter:blur(4px);
+  box-shadow:0 0 14px rgba(94,240,255,.4), inset 0 0 10px rgba(94,240,255,.15);
+}
+.hud-label{font-size:9px; letter-spacing:1px; color:var(--cyan); opacity:.85;}
+.hud-val{font-family:'Press Start 2P',monospace; font-size:16px; margin-top:4px; color:#fff; text-shadow:0 0 8px var(--pink);}
+#hudScore .hud-val{color:var(--gold); text-shadow:0 0 8px var(--gold);}
+#hudTime .hud-val{color:var(--green); text-shadow:0 0 8px var(--green);}
+.center-hud{display:flex; gap:10px;}
+#muteBtn{
+  pointer-events:auto; cursor:pointer; background:rgba(20,4,40,.55);
+  border:2px solid var(--magenta); border-radius:10px; padding:7px 10px;
+  color:var(--magenta); font-family:'Press Start 2P',monospace; font-size:11px;
+  box-shadow:0 0 12px rgba(255,94,200,.4);
+}
+#muteBtn:active{transform:scale(.94);}
+
+/* 遮罩 */
+.overlay{
+  position:fixed; inset:0; z-index:40;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  background:radial-gradient(ellipse at 50% 35%, rgba(58,10,82,.9), rgba(18,4,34,.97));
+  text-align:center; padding:20px;
+}
+.overlay.hidden{display:none;}
+.title{
+  font-family:'Press Start 2P',monospace; font-size:clamp(20px,6vw,46px);
+  line-height:1.5; margin-bottom:22px;
+  color:var(--cyan);
+  text-shadow:0 0 10px var(--cyan), 4px 4px 0 var(--pink), 8px 8px 0 rgba(255,46,136,.4);
+}
+.subtitle{font-size:clamp(13px,3.4vw,18px); color:var(--magenta); margin-bottom:8px; letter-spacing:1px;}
+.rules{font-size:clamp(11px,2.8vw,15px); color:#dcd0ff; line-height:1.9; margin:14px 0 26px; max-width:520px;}
+.rules b{color:var(--gold);} .rules .bomb{color:var(--pink);}
+.btn{
+  cursor:pointer; font-family:'Press Start 2P',monospace; font-size:clamp(12px,3vw,16px);
+  color:#120422; background:linear-gradient(180deg,var(--cyan),var(--magenta));
+  border:none; border-radius:12px; padding:16px 30px; letter-spacing:1px;
+  box-shadow:0 0 22px rgba(94,240,255,.6), 0 6px 0 #8a1c5e;
+  transition:transform .08s;
+}
+.btn:active{transform:translateY(3px); box-shadow:0 0 22px rgba(94,240,255,.6), 0 3px 0 #8a1c5e;}
+.final-score{font-family:'Press Start 2P',monospace; font-size:clamp(22px,7vw,40px); color:var(--gold); text-shadow:0 0 14px var(--gold); margin:8px 0;}
+.best{font-size:clamp(12px,3vw,16px); color:var(--cyan); margin-bottom:18px;}
+.new-best{color:var(--pink); animation:blink .6s steps(2) infinite;}
+@keyframes blink{50%{opacity:.2;}}
+.demo-badge{
+  position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:30;
+  font-family:'Press Start 2P',monospace; font-size:10px; color:var(--gold);
+  background:rgba(20,4,40,.6); border:2px solid var(--gold); border-radius:8px;
+  padding:6px 10px; box-shadow:0 0 14px rgba(255,217,94,.5); display:none;
+}
+
+/* SVG 元素动画类 */
+.mole-pop{ transition:transform .18s cubic-bezier(.34,1.56,.64,1); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <!-- ===== 整个游戏画面用 SVG 矢量渲染 ===== -->
+  <svg id="stage" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice" aria-label="霓虹打地鼠">
+    <defs>
+      <!-- 日落背景渐变 -->
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0"  stop-color="#2a0845"/>
+        <stop offset=".45" stop-color="#5a0a6e"/>
+        <stop offset=".62" stop-color="#ff2e88"/>
+        <stop offset=".7" stop-color="#ff8e3c"/>
+        <stop offset="1"  stop-color="#1a0830"/>
+      </linearGradient>
+      <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#ffd95e"/>
+        <stop offset=".5" stop-color="#ff5ec8"/>
+        <stop offset="1" stop-color="#ff2e88"/>
+      </radialGradient>
+      <!-- 地面 -->
+      <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#240a44"/>
+        <stop offset="1" stop-color="#10031f"/>
+      </linearGradient>
+      <!-- 地鼠身体渐变 -->
+      <radialGradient id="moleBody" cx="0.5" cy="0.35" r="0.75">
+        <stop offset="0" stop-color="#7dffc0"/>
+        <stop offset=".55" stop-color="#5effa0"/>
+        <stop offset="1" stop-color="#1f9e63"/>
+      </radialGradient>
+      <radialGradient id="bombBody" cx="0.5" cy="0.35" r="0.75">
+        <stop offset="0" stop-color="#ff8ec0"/>
+        <stop offset=".55" stop-color="#ff2e88"/>
+        <stop offset="1" stop-color="#8a1244"/>
+      </radialGradient>
+      <radialGradient id="holeGrad" cx="0.5" cy="0.4" r="0.6">
+        <stop offset="0" stop-color="#0a0118"/>
+        <stop offset="1" stop-color="#2a0a44"/>
+      </radialGradient>
+      <!-- 霓虹发光滤镜 -->
+      <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="4" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glowStrong" x="-80%" y="-80%" width="260%" height="260%">
+        <feGaussianBlur stdDeviation="7" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <!-- 地鼠剪裁,使其从洞中冒出时被洞口下沿遮挡 -->
+    </defs>
+
+    <!-- 背景层 -->
+    <rect x="0" y="0" width="800" height="600" fill="url(#sky)"/>
+    <circle cx="400" cy="300" r="150" fill="url(#sun)" opacity="0.9" filter="url(#glow)"/>
+    <!-- 太阳横纹 -->
+    <g fill="#1a0830">
+      <rect x="250" y="300" width="300" height="6"/>
+      <rect x="250" y="320" width="300" height="9"/>
+      <rect x="250" y="345" width="300" height="12"/>
+      <rect x="250" y="375" width="300" height="16"/>
+    </g>
+    <!-- 远山霓虹轮廓 -->
+    <path d="M0 360 L120 300 L230 350 L340 290 L470 350 L600 300 L720 345 L800 320 L800 400 L0 400 Z"
+          fill="none" stroke="#ff5ec8" stroke-width="2" opacity="0.5" filter="url(#glow)"/>
+
+    <!-- 地面 + 透视网格 -->
+    <rect x="0" y="360" width="800" height="240" fill="url(#ground)"/>
+    <g id="grid" stroke="#5ef0ff" stroke-width="1.5" opacity="0.45" filter="url(#glow)"></g>
+
+    <!-- 洞 + 地鼠 容器(脚本动态生成) -->
+    <g id="holesLayer"></g>
+
+    <!-- 特效层(锤击、得分文字) -->
+    <g id="fxLayer"></g>
+
+    <!-- 自定义锤子光标(跟随指针) -->
+    <g id="hammer" style="pointer-events:none; opacity:0" transform="translate(-100,-100)">
+      <g id="hammerInner">
+        <rect x="-6" y="0" width="12" height="46" rx="5" fill="#ffd95e" stroke="#ff2e88" stroke-width="2" filter="url(#glow)"/>
+        <rect x="-26" y="-22" width="52" height="30" rx="7" fill="#5ef0ff" stroke="#ff2e88" stroke-width="3" filter="url(#glow)"/>
+      </g>
+    </g>
+  </svg>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="hud-box" id="hudScore"><div class="hud-label">SCORE</div><div class="hud-val" id="scoreVal">0</div></div>
+  <div class="center-hud">
+    <div class="hud-box" id="hudCombo" style="display:none"><div class="hud-label">COMBO</div><div class="hud-val" id="comboVal">x1</div></div>
+    <button id="muteBtn" aria-label="静音">♪</button>
+  </div>
+  <div class="hud-box" id="hudTime"><div class="hud-label">TIME</div><div class="hud-val" id="timeVal">30</div></div>
+</div>
+
+<div class="demo-badge" id="demoBadge">● AUTO DEMO</div>
+
+<!-- 开始遮罩 -->
+<div class="overlay" id="startOverlay">
+  <div class="title">NEON<br>WHACK</div>
+  <div class="subtitle">霓虹打地鼠 · OUTRUN</div>
+  <div class="rules">
+    敲击冒头的<b>绿色地鼠</b>得分,连击翻倍!<br>
+    避开<span class="bomb">粉色炸弹地鼠</span>——打中扣分又减时!<br>
+    <b>30 秒</b>内尽量多打,越往后冒得越快。
+  </div>
+  <button class="btn" id="startBtn">▶ START</button>
+</div>
+
+<!-- 结束遮罩 -->
+<div class="overlay hidden" id="endOverlay">
+  <div class="title" style="font-size:clamp(18px,5vw,34px)">TIME UP!</div>
+  <div class="subtitle">最终得分</div>
+  <div class="final-score" id="finalScore">0</div>
+  <div class="best" id="bestLine">最高分 0</div>
+  <button class="btn" id="restartBtn">↻ REPLAY</button>
+</div>
+
+<script>
+/* =========================================================
+   NEON WHACK · 霓虹打地鼠 (纯 SVG 渲染)
+   - SVG <g>/<circle>/<path> 元素绘制洞、地鼠、特效
+   - 冒出/缩回用 CSS transform 过渡
+   - Web Audio 程序化音效 + 合成波循环配乐
+   - rAF + delta time 主循环
+   - ?demo / ?record 触发自动演示 AI
+   ========================================================= */
+(function(){
+'use strict';
+
+const SVGNS='http://www.w3.org/2000/svg';
+const VBW=800, VBH=600;
+
+// ---------- DOM 引用 ----------
+const stage=document.getElementById('stage');
+const holesLayer=document.getElementById('holesLayer');
+const fxLayer=document.getElementById('fxLayer');
+const gridG=document.getElementById('grid');
+const hammer=document.getElementById('hammer');
+const hammerInner=document.getElementById('hammerInner');
+const scoreVal=document.getElementById('scoreVal');
+const timeVal=document.getElementById('timeVal');
+const comboVal=document.getElementById('comboVal');
+const hudCombo=document.getElementById('hudCombo');
+const startOverlay=document.getElementById('startOverlay');
+const endOverlay=document.getElementById('endOverlay');
+const finalScore=document.getElementById('finalScore');
+const bestLine=document.getElementById('bestLine');
+const muteBtn=document.getElementById('muteBtn');
+const demoBadge=document.getElementById('demoBadge');
+
+// ---------- 演示模式检测 ----------
+const params=new URLSearchParams(location.search);
+const DEMO = params.has('demo') || params.has('record');
+
+// ---------- 游戏状态 ----------
+const GAME_TIME=30;
+let state='idle';          // idle | playing | over
+let score=0, best=0, combo=0, maxCombo=0;
+let timeLeft=GAME_TIME;
+let lastT=0, spawnTimer=0;
+let muted=false;
+let holes=[];              // 洞数组
+
+try{ best=parseInt(localStorage.getItem('neonWhackBest')||'0',10)||0; }catch(e){ best=0; }
+
+/* ====================== 音频系统 ====================== */
+const Audio2={ctx:null, master:null, musicGain:null, musicTimer:null, started:false};
+function initAudio(){
+  if(Audio2.ctx) return;
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    Audio2.ctx=new AC();
+    Audio2.master=Audio2.ctx.createGain();
+    Audio2.master.gain.value=muted?0:0.9;
+    Audio2.master.connect(Audio2.ctx.destination);
+    Audio2.musicGain=Audio2.ctx.createGain();
+    Audio2.musicGain.gain.value=0.28;
+    Audio2.musicGain.connect(Audio2.master);
+  }catch(e){ console.warn('audio init failed',e); }
+}
+function resumeAudio(){
+  if(Audio2.ctx && Audio2.ctx.state==='suspended'){ Audio2.ctx.resume(); }
+}
+// 程序化音效
+function beep(freq,dur,type,vol,slideTo){
+  if(!Audio2.ctx) return;
+  try{
+    const t=Audio2.ctx.currentTime;
+    const o=Audio2.ctx.createOscillator();
+    const g=Audio2.ctx.createGain();
+    o.type=type||'square';
+    o.frequency.setValueAtTime(freq,t);
+    if(slideTo){ o.frequency.exponentialRampToValueAtTime(Math.max(40,slideTo),t+dur); }
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol||0.3,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(Audio2.master);
+    o.start(t); o.stop(t+dur+0.02);
+  }catch(e){}
+}
+function noiseHit(){ // 锤击噪声
+  if(!Audio2.ctx) return;
+  try{
+    const t=Audio2.ctx.currentTime;
+    const len=Math.floor(Audio2.ctx.sampleRate*0.12);
+    const buf=Audio2.ctx.createBuffer(1,len,Audio2.ctx.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<len;i++){ d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.5); }
+    const src=Audio2.ctx.createBufferSource(); src.buffer=buf;
+    const g=Audio2.ctx.createGain(); g.gain.value=0.4;
+    const f=Audio2.ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1400;
+    src.connect(f); f.connect(g); g.connect(Audio2.master); src.start(t);
+  }catch(e){}
+}
+function sHit(){ beep(660,0.12,'square',0.3,1180); noiseHit(); }
+function sMiss(){ beep(180,0.18,'sawtooth',0.25,90); }
+function sBomb(){ beep(120,0.4,'sawtooth',0.4,40); noiseHit(); beep(90,0.5,'square',0.2,50); }
+function sStart(){ beep(440,0.1,'square',0.3); setTimeout(()=>beep(660,0.1,'square',0.3),100); setTimeout(()=>beep(880,0.15,'square',0.3),200); }
+function sEnd(){ [660,550,440,330].forEach((f,i)=>setTimeout(()=>beep(f,0.2,'triangle',0.3),i*140)); }
+
+// 合成波循环配乐(分音符调度)
+const bassSeq=[55,55,82.4,55,73.4,73.4,82.4,98];      // A1 风格低音
+const leadSeq=[440,0,330,392,440,0,523,494];
+let musicStep=0;
+function musicTick(){
+  if(!Audio2.ctx || state!=='playing'){ return; }
+  const i=musicStep%8;
+  // 低音
+  playMusic(bassSeq[i],0.32,'sawtooth',0.5);
+  // 主旋律(隔拍)
+  if(leadSeq[i]>0){ playMusic(leadSeq[i],0.22,'square',0.18); }
+  // 鼓点
+  if(i%2===0){ kick(); } else { hat(); }
+  musicStep++;
+}
+function playMusic(freq,dur,type,vol){
+  if(!Audio2.ctx||freq<=0) return;
+  try{
+    const t=Audio2.ctx.currentTime;
+    const o=Audio2.ctx.createOscillator(); const g=Audio2.ctx.createGain();
+    o.type=type; o.frequency.value=freq;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(Audio2.musicGain); o.start(t); o.stop(t+dur+0.02);
+  }catch(e){}
+}
+function kick(){ if(!Audio2.ctx)return; try{const t=Audio2.ctx.currentTime;const o=Audio2.ctx.createOscillator();const g=Audio2.ctx.createGain();o.frequency.setValueAtTime(150,t);o.frequency.exponentialRampToValueAtTime(50,t+0.12);g.gain.setValueAtTime(0.5,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.14);o.connect(g);g.connect(Audio2.musicGain);o.start(t);o.stop(t+0.16);}catch(e){} }
+function hat(){ if(!Audio2.ctx)return; try{const t=Audio2.ctx.currentTime;const len=Math.floor(Audio2.ctx.sampleRate*0.04);const b=Audio2.ctx.createBuffer(1,len,Audio2.ctx.sampleRate);const d=b.getChannelData(0);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*(1-i/len);const s=Audio2.ctx.createBufferSource();s.buffer=b;const g=Audio2.ctx.createGain();g.gain.value=0.12;const f=Audio2.ctx.createBiquadFilter();f.type='highpass';f.frequency.value=7000;s.connect(f);f.connect(g);g.connect(Audio2.musicGain);s.start(t);}catch(e){} }
+
+function startMusic(){
+  if(Audio2.musicTimer) clearInterval(Audio2.musicTimer);
+  musicStep=0;
+  Audio2.musicTimer=setInterval(musicTick,200); // 每 200ms 一个十六分音符 ≈ 150BPM 感觉
+}
+function stopMusic(){ if(Audio2.musicTimer){ clearInterval(Audio2.musicTimer); Audio2.musicTimer=null; } }
+
+/* ====================== 背景网格生成 ====================== */
+function buildGrid(){
+  let s='';
+  // 横线(透视)
+  for(let i=0;i<=9;i++){
+    const y=360 + Math.pow(i/9,1.8)*240;
+    s+=`<line x1="0" y1="${y}" x2="800" y2="${y}"/>`;
+  }
+  // 竖线(向消失点 400,360 收敛)
+  for(let i=-8;i<=8;i++){
+    const x0=400 + i*100;
+    const x1=400 + i*45;
+    s+=`<line x1="${x0}" y1="600" x2="${x1}" y2="360"/>`;
+  }
+  gridG.innerHTML=s;
+}
+buildGrid();
+
+/* ====================== 洞 + 地鼠 SVG 构建 ====================== */
+// 3 列 x 2 行 的洞口布局(在地面透视区域)
+const HOLE_LAYOUT=[
+  {x:200,y:420}, {x:400,y:410}, {x:600,y:420},
+  {x:150,y:520}, {x:400,y:530}, {x:650,y:520}
+];
+
+function buildMoleSVG(){
+  // 一只地鼠(默认绿色,可改色)。坐标系以洞中心为原点,身体向上冒。
+  // 用 g 包裹,初始 translate(0,90) 藏在洞下,冒出时 translate(0,0)
+  return `
+    <g class="mole-pop moleBody" transform="translate(0,95)">
+      <!-- 身体 -->
+      <ellipse class="mBody" cx="0" cy="-30" rx="52" ry="56" fill="url(#moleBody)" stroke="#5effa0" stroke-width="2.5" filter="url(#glow)"/>
+      <!-- 肚皮 -->
+      <ellipse cx="0" cy="-10" rx="30" ry="32" fill="#d8fff0" opacity="0.55"/>
+      <!-- 耳朵 -->
+      <circle class="mEar" cx="-34" cy="-72" r="13" fill="url(#moleBody)" stroke="#5effa0" stroke-width="2"/>
+      <circle class="mEar" cx="34" cy="-72" r="13" fill="url(#moleBody)" stroke="#5effa0" stroke-width="2"/>
+      <!-- 眼睛 -->
+      <circle cx="-18" cy="-44" r="9" fill="#0a0118"/>
+      <circle cx="18" cy="-44" r="9" fill="#0a0118"/>
+      <circle class="mEye" cx="-15" cy="-47" r="3" fill="#fff"/>
+      <circle class="mEye" cx="21" cy="-47" r="3" fill="#fff"/>
+      <!-- 鼻子 -->
+      <ellipse cx="0" cy="-28" rx="9" ry="6" fill="#ff2e88"/>
+      <!-- 嘴 -->
+      <path d="M-12 -16 Q0 -6 12 -16" fill="none" stroke="#0a0118" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- 爪子 -->
+      <ellipse cx="-40" cy="14" rx="14" ry="9" fill="url(#moleBody)" stroke="#5effa0" stroke-width="2"/>
+      <ellipse cx="40" cy="14" rx="14" ry="9" fill="url(#moleBody)" stroke="#5effa0" stroke-width="2"/>
+    </g>`;
+}
+function buildBombDecor(){
+  // 炸弹地鼠额外的引线和危险标记(叠加在 g 之上由脚本切换)
+  return `
+      <!-- 引线 -->
+      <path class="fuse" d="M0 -84 Q14 -104 28 -98" fill="none" stroke="#ffd95e" stroke-width="3" stroke-linecap="round"/>
+      <circle class="spark" cx="30" cy="-100" r="5" fill="#ffd95e" filter="url(#glowStrong)"/>
+      <!-- 危险眉毛 -->
+      <path d="M-28 -56 L-8 -50" stroke="#0a0118" stroke-width="3" stroke-linecap="round"/>
+      <path d="M28 -56 L8 -50" stroke="#0a0118" stroke-width="3" stroke-linecap="round"/>`;
+}
+
+function createHoles(){
+  holesLayer.innerHTML='';
+  holes=[];
+  HOLE_LAYOUT.forEach((pos,idx)=>{
+    const g=document.createElementNS(SVGNS,'g');
+    g.setAttribute('transform',`translate(${pos.x},${pos.y})`);
+
+    // 洞口(椭圆)+ 内部用作 clip 让地鼠从下沿冒出
+    const clipId='holeClip'+idx;
+    g.innerHTML=`
+      <ellipse cx="0" cy="6" rx="66" ry="24" fill="#ff2e88" opacity="0.5" filter="url(#glow)"/>
+      <clipPath id="${clipId}"><rect x="-80" y="-110" width="160" height="116"/></clipPath>
+      <g clip-path="url(#${clipId})">
+        <g class="moleHost">${buildMoleSVG()}</g>
+      </g>
+      <!-- 洞口前沿(遮住地鼠下半身) -->
+      <ellipse cx="0" cy="6" rx="62" ry="22" fill="url(#holeGrad)" stroke="#5ef0ff" stroke-width="3" filter="url(#glow)"/>
+      <ellipse cx="0" cy="3" rx="58" ry="17" fill="#0a0118"/>
+    `;
+    holesLayer.appendChild(g);
+
+    const host=g.querySelector('.moleHost');
+    const moleG=g.querySelector('.moleBody');
+    const hole={
+      idx, x:pos.x, y:pos.y, g, host, moleG,
+      active:false, type:'mole', // 'mole' | 'bomb'
+      state:'down',              // down | up | hiding | hit
+      timer:0, life:0,
+    };
+    // 点击/触摸命中
+    g.style.cursor='pointer';
+    g.addEventListener('pointerdown',(e)=>{ e.preventDefault(); whack(hole); }, {passive:false});
+    holes.push(hole);
+  });
+}
+
+/* ====================== 地鼠冒出 / 缩回 ====================== */
+function popUp(hole){
+  if(hole.active) return;
+  hole.active=true;
+  hole.state='up';
+  hole.type=(Math.random()< bombChance()) ? 'bomb' : 'mole';
+
+  // 重建地鼠(确保干净状态),设置颜色与炸弹装饰
+  hole.host.innerHTML=buildMoleSVG();
+  hole.moleG=hole.host.querySelector('.moleBody');
+  if(hole.type==='bomb'){
+    // 改为炸弹配色
+    hole.host.querySelectorAll('.mBody,.mEar,ellipse[cx="-40"],ellipse[cx="40"]').forEach(el=>{
+      el.setAttribute('fill','url(#bombBody)');
+      el.setAttribute('stroke','#ff2e88');
+    });
+    hole.moleG.insertAdjacentHTML('beforeend',buildBombDecor());
+  }
+  // 触发冒出动画:从 translate(0,95) -> translate(0,0)
+  requestAnimationFrame(()=>{ if(hole.moleG) hole.moleG.setAttribute('transform','translate(0,0)'); });
+
+  // 停留时间(随时间变短)
+  hole.life = upDuration();
+  hole.timer=0;
+}
+function popDown(hole){
+  if(!hole.active) return;
+  hole.state='hiding';
+  if(hole.moleG) hole.moleG.setAttribute('transform','translate(0,95)');
+  setTimeout(()=>{
+    hole.active=false; hole.state='down';
+    if(hole.host) hole.host.innerHTML='';
+  },190);
+}
+
+/* ====================== 命中逻辑 ====================== */
+function whack(hole){
+  if(state!=='playing') return;
+  if(!hole.active || hole.state==='hit' || hole.state==='hiding') return;
+
+  // 锤击特效
+  spawnHammerHit(hole.x, hole.y-20);
+
+  if(hole.type==='mole'){
+    hole.state='hit';
+    combo++; if(combo>maxCombo) maxCombo=combo;
+    const mult=Math.min(1+Math.floor(combo/3),5);
+    const gain=10*mult;
+    score+=gain;
+    updateCombo();
+    sHit();
+    floatText('+'+gain, hole.x, hole.y-70, '#5effa0');
+    squishAndHide(hole);
+  }else{
+    // 炸弹:扣分 + 减时
+    hole.state='hit';
+    combo=0; updateCombo();
+    score=Math.max(0,score-15);
+    timeLeft=Math.max(0,timeLeft-2);
+    sBomb();
+    floatText('-15  -2s', hole.x, hole.y-70, '#ff2e88');
+    explode(hole.x, hole.y-30);
+    squishAndHide(hole);
+    screenShake();
+  }
+  scoreVal.textContent=score;
+}
+function squishAndHide(hole){
+  // 被打中:压扁一下再缩回
+  if(hole.moleG){
+    hole.moleG.style.transition='transform .1s ease-out';
+    hole.moleG.setAttribute('transform','translate(0,18) scale(1.25,0.5)');
+  }
+  setTimeout(()=>popDown(hole),110);
+}
+
+/* ====================== 特效 ====================== */
+function spawnHammerHit(x,y){
+  // 星形撞击闪光
+  const g=document.createElementNS(SVGNS,'g');
+  g.setAttribute('transform',`translate(${x},${y})`);
+  g.innerHTML=`<g filter="url(#glowStrong)">
+    <path d="M0 -34 L8 -10 L34 0 L8 10 L0 34 L-8 10 L-34 0 L-8 -10 Z" fill="#ffd95e"/>
+    <circle r="10" fill="#fff"/></g>`;
+  fxLayer.appendChild(g);
+  let s=0.2, op=1;
+  const t0=performance.now();
+  function anim(t){
+    const k=(t-t0)/220;
+    s=0.2+k*1.4; op=1-k;
+    g.setAttribute('transform',`translate(${x},${y}) scale(${s})`);
+    g.style.opacity=Math.max(0,op);
+    if(k<1) requestAnimationFrame(anim); else g.remove();
+  }
+  requestAnimationFrame(anim);
+  // 锤子下挥动画
+  swingHammer();
+}
+function explode(x,y){
+  const g=document.createElementNS(SVGNS,'g');
+  g.setAttribute('transform',`translate(${x},${y})`);
+  let inner='<circle r="14" fill="#ff2e88" filter="url(#glowStrong)"/>';
+  const parts=[];
+  for(let i=0;i<10;i++){
+    const a=(i/10)*Math.PI*2;
+    parts.push({a,el:null});
+    inner+=`<circle class="p${i}" r="6" cx="0" cy="0" fill="${i%2?'#ffd95e':'#ff5ec8'}"/>`;
+  }
+  g.innerHTML=inner; fxLayer.appendChild(g);
+  const t0=performance.now();
+  function anim(t){
+    const k=(t-t0)/420;
+    for(let i=0;i<10;i++){
+      const c=g.querySelector('.p'+i);
+      if(c){ const d=k*70; c.setAttribute('cx',Math.cos(parts[i].a)*d); c.setAttribute('cy',Math.sin(parts[i].a)*d); }
+    }
+    g.style.opacity=Math.max(0,1-k);
+    if(k<1) requestAnimationFrame(anim); else g.remove();
+  }
+  requestAnimationFrame(anim);
+}
+function floatText(txt,x,y,color){
+  const t=document.createElementNS(SVGNS,'text');
+  t.setAttribute('x',x); t.setAttribute('y',y);
+  t.setAttribute('text-anchor','middle');
+  t.setAttribute('fill',color);
+  t.setAttribute('font-family',"'Press Start 2P',monospace");
+  t.setAttribute('font-size','18');
+  t.setAttribute('filter','url(#glow)');
+  t.textContent=txt;
+  fxLayer.appendChild(t);
+  const t0=performance.now();
+  function anim(tm){
+    const k=(tm-t0)/700;
+    t.setAttribute('y',y-k*40);
+    t.style.opacity=Math.max(0,1-k);
+    if(k<1) requestAnimationFrame(anim); else t.remove();
+  }
+  requestAnimationFrame(anim);
+}
+let shakeT=0;
+function screenShake(){ shakeT=0.35; }
+
+/* ====================== 锤子光标 ====================== */
+let hammerSwing=0;
+function swingHammer(){ hammerSwing=0.18; }
+function moveHammer(px,py){
+  hammer.style.opacity=1;
+  hammer.setAttribute('transform',`translate(${px},${py})`);
+}
+function updateHammer(dt){
+  if(hammerSwing>0){
+    hammerSwing-=dt;
+    const k=Math.max(0,hammerSwing/0.18);
+    const ang=-50*k; // 挥下后回弹
+    hammerInner.setAttribute('transform',`rotate(${ang})`);
+  }else{
+    hammerInner.setAttribute('transform','rotate(0)');
+  }
+}
+
+// 指针转 SVG 坐标
+function clientToSVG(cx,cy){
+  const r=stage.getBoundingClientRect();
+  // preserveAspectRatio slice: 取较大缩放
+  const scale=Math.max(r.width/VBW, r.height/VBH);
+  const ox=(r.width - VBW*scale)/2, oy=(r.height - VBH*scale)/2;
+  return { x:(cx-r.left-ox)/scale, y:(cy-r.top-oy)/scale };
+}
+window.addEventListener('pointermove',(e)=>{
+  if(DEMO) return;
+  const p=clientToSVG(e.clientX,e.clientY);
+  moveHammer(p.x,p.y);
+});
+
+/* ====================== 难度曲线 ====================== */
+function progress(){ return 1-(timeLeft/GAME_TIME); } // 0→1
+function spawnInterval(){ return 0.95 - progress()*0.62; }   // 0.95s → 0.33s
+function upDuration(){ return 1.5 - progress()*0.85; }        // 停留 1.5s → 0.65s
+function bombChance(){ return 0.12 + progress()*0.18; }       // 12% → 30%
+
+/* ====================== 组合/HUD ====================== */
+function updateCombo(){
+  if(combo>=2){ hudCombo.style.display='block'; comboVal.textContent='x'+Math.min(1+Math.floor(combo/3),5); }
+  else hudCombo.style.display='none';
+}
+
+/* ====================== 生成调度 ====================== */
+function trySpawn(){
+  // 随机选一个空闲洞
+  const free=holes.filter(h=>!h.active);
+  if(!free.length) return;
+  const h=free[(Math.random()*free.length)|0];
+  popUp(h);
+}
+
+/* ====================== 主循环 ====================== */
+let rafId=0;
+function loop(t){
+  rafId=requestAnimationFrame(loop);
+  const dt=Math.min(0.05,(t-lastT)/1000)||0; lastT=t;
+
+  // --- update ---
+  try{
+    if(state==='playing'){
+      timeLeft-=dt;
+      if(timeLeft<=0){ timeLeft=0; endGame(); }
+      timeVal.textContent=Math.ceil(timeLeft);
+
+      spawnTimer-=dt;
+      if(spawnTimer<=0){
+        spawnTimer=spawnInterval()*(0.7+Math.random()*0.6);
+        trySpawn();
+        // 后期偶尔双冒
+        if(progress()>0.5 && Math.random()<0.3) trySpawn();
+      }
+      // 地鼠自动缩回
+      holes.forEach(h=>{
+        if(h.active && (h.state==='up')){
+          h.timer+=dt;
+          if(h.timer>=h.life){ combo=0; updateCombo(); popDown(h); }
+        }
+      });
+      // 闪烁引线火花
+      if(((t/120)|0)%2===0){
+        holes.forEach(h=>{ const sp=h.g&&h.g.querySelector('.spark'); if(sp) sp.style.opacity=Math.random()<0.5?1:0.3; });
+      }
+      // 演示 AI
+      if(DEMO) demoAI();
+    }
+    updateHammer(dt);
+  }catch(err){ console.error('update error',err); }
+
+  // --- draw (屏幕抖动) ---
+  try{
+    if(shakeT>0){
+      shakeT-=dt;
+      const m=shakeT*30;
+      stage.style.transform=`translate(${(Math.random()-0.5)*m}px,${(Math.random()-0.5)*m}px)`;
+    }else{
+      stage.style.transform='';
+    }
+  }catch(err){ console.error('draw error',err); }
+}
+
+/* ====================== 演示 AI ====================== */
+let demoCursorTarget=null, demoActTimer=0;
+function demoAI(){
+  // 找到所有冒头的非炸弹地鼠,选最先要消失的去打
+  demoActTimer-=0.016;
+  const targets=holes.filter(h=>h.active && h.type==='mole' && h.state==='up');
+  if(targets.length){
+    // 优先剩余生命最短的
+    targets.sort((a,b)=>(a.life-a.timer)-(b.life-b.timer));
+    const tgt=targets[0];
+    // 移动锤子到目标(平滑)
+    moveHammer(tgt.x, tgt.y-20);
+    if(demoActTimer<=0){
+      whack(tgt);
+      demoActTimer=0.12; // 节流,避免一帧多打
+    }
+  }
+}
+
+/* ====================== 游戏流程 ====================== */
+function startGame(){
+  initAudio(); resumeAudio();
+  createHoles();
+  score=0; combo=0; maxCombo=0; timeLeft=GAME_TIME; spawnTimer=0.4; shakeT=0;
+  scoreVal.textContent='0'; timeVal.textContent=GAME_TIME; updateCombo();
+  state='playing';
+  startOverlay.classList.add('hidden');
+  endOverlay.classList.add('hidden');
+  if(!muted) sStart();
+  startMusic();
+  if(DEMO){ demoBadge.style.display='block'; hammer.style.opacity=1; }
+}
+function endGame(){
+  if(state==='over') return;
+  state='over';
+  stopMusic();
+  // 缩回所有地鼠
+  holes.forEach(h=>{ if(h.active) popDown(h); });
+  if(score>best){ best=score; try{localStorage.setItem('neonWhackBest',String(best));}catch(e){} bestLine.innerHTML='<span class="new-best">★ NEW BEST '+best+' ★</span>'; }
+  else { bestLine.textContent='最高分 '+best; }
+  finalScore.textContent=score;
+  endOverlay.classList.remove('hidden');
+  if(!muted) sEnd();
+  // 演示模式自动重开
+  if(DEMO){ setTimeout(()=>{ if(state==='over') startGame(); }, 2600); }
+}
+
+/* ====================== 输入绑定 ====================== */
+document.getElementById('startBtn').addEventListener('click',()=>{ startGame(); });
+document.getElementById('restartBtn').addEventListener('click',()=>{ startGame(); });
+muteBtn.addEventListener('click',()=>{
+  muted=!muted;
+  muteBtn.textContent=muted?'✕':'♪';
+  if(Audio2.master) Audio2.master.gain.value=muted?0:0.9;
+});
+// 键盘:空格开始/重开;M 静音
+window.addEventListener('keydown',(e)=>{
+  if(e.code==='Space'){ e.preventDefault(); if(state!=='playing') startGame(); }
+  if(e.key==='m'||e.key==='M'){ muteBtn.click(); }
+});
+// 首次手势恢复音频
+['pointerdown','keydown','touchstart'].forEach(ev=>{
+  window.addEventListener(ev,()=>{ initAudio(); resumeAudio(); }, {once:false});
+});
+
+/* ====================== resize ====================== */
+function fit(){ /* SVG 用 viewBox 自适应,无需额外处理 */ }
+window.addEventListener('resize',fit);
+
+/* ====================== 启动 ====================== */
+createHoles();
+lastT=performance.now();
+rafId=requestAnimationFrame(loop);
+
+// 演示模式:免手势直接开局
+if(DEMO){
+  // 某些浏览器音频仍需手势;尽力 resume
+  initAudio();
+  setTimeout(()=>{ resumeAudio(); startGame(); }, 350);
+}
+
+})();
+</script>
+</body>
+</html>
