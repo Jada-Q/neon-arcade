@@ -2,6 +2,8 @@
 
 一套合成波（OutRun / 赛博霓虹）风格的纯前端浏览器游戏合集，共 **34 款游戏**。每款都是**单文件 HTML**，无需安装、无需后端、双击即玩；支持 PWA 离线安装。
 
+### 🕹️ [在线试玩 → jada-q.github.io/neon-arcade](https://jada-q.github.io/neon-arcade/)
+
 > 技术栈：原生 HTML / Canvas / WebGL（Three.js）/ Web Audio / 部分用 MediaPipe 做摄像头·手势·语音体感交互 / PWA（manifest + service worker）
 
 ## 🎮 游戏清单
